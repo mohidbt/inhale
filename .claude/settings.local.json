@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(git init:*)",
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "Bash(gh --version)",
+      "Bash(ssh-keygen:*)",
+      "Bash(npx create-next-app@latest:*)",
+      "Skill(shadcn)"
     ]
   }
 }
