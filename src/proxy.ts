@@ -1,26 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
 
-// Better Auth session cookie names (better-auth prefix + session_token)
-// In development: "better-auth.session_token"
-// In production:  "__Secure-better-auth.session_token"
-const SESSION_COOKIE = "better-auth.session_token";
-const SESSION_COOKIE_SECURE = "__Secure-better-auth.session_token";
+const PROTECTED_PREFIXES = ["/library", "/reader", "/settings"];
+const AUTH_PATHS = ["/login", "/signup"];
 
-export default async function proxy(request: NextRequest) {
-  // Optimistic check: read the session token cookie directly.
-  // This avoids a DB round-trip on every request.
-  // Full session validation happens inside each protected route/layout.
-  const sessionToken =
-    request.cookies.get(SESSION_COOKIE)?.value ||
-    request.cookies.get(SESSION_COOKIE_SECURE)?.value;
+export function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
 
-  if (!sessionToken) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  const session = getSessionCookie(request);
+
+  const isProtected = PROTECTED_PREFIXES.some((prefix) =>
+    pathname.startsWith(prefix)
+  );
+  const isAuthPath = AUTH_PATHS.some((p) => pathname.startsWith(p));
+
+  if (isProtected && !session) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  if (isAuthPath && session) {
+    return NextResponse.redirect(new URL("/library", request.url));
   }
 
   return NextResponse.next();
 }
 
-export const config = {
-  matcher: ["/library/:path*", "/reader/:path*", "/settings/:path*"],
+export const proxyConfig = {
+  matcher: ["/library/:path*", "/reader/:path*", "/settings/:path*", "/login", "/signup"],
 };

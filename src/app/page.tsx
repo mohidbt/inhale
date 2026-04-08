@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <div className="min-h-screen bg-[#f4f1ec] text-[#1a1a1a] selection:bg-[#1a1a1a] selection:text-[#f4f1ec]">
@@ -20,9 +22,9 @@ export default function Home() {
         </span>
 
         <div className="hidden items-center gap-8 text-xs font-medium tracking-widest uppercase md:flex">
-          <span className="cursor-pointer hover:opacity-60 transition-opacity">
+          <Link href="/library" className="cursor-pointer hover:opacity-60 transition-opacity">
             Library
-          </span>
+          </Link>
           <span className="cursor-pointer hover:opacity-60 transition-opacity">
             Fields
           </span>
@@ -83,7 +85,7 @@ export default function Home() {
                 <br />
                 <span className="text-[#1a1a1a]/20">Science</span>
               </h1>
-              <div className="mt-8 inline-flex items-center gap-2 bg-[#1a1a1a] text-[#f4f1ec] px-6 py-3 text-sm font-medium tracking-wide cursor-pointer hover:bg-[#333] transition-colors">
+              <Link href="/login" className="mt-8 inline-flex items-center gap-2 bg-[#1a1a1a] text-[#f4f1ec] px-6 py-3 text-sm font-medium tracking-wide hover:bg-[#333] transition-colors">
                 Explore Papers
                 <svg
                   width="14"
@@ -98,7 +100,7 @@ export default function Home() {
                     strokeWidth="1.5"
                   />
                 </svg>
-              </div>
+              </Link>
             </div>
           </div>
 

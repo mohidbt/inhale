@@ -15,14 +15,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 interface PdfViewerProps {
   url: string;
+  containerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export function PdfViewer({ url }: PdfViewerProps) {
+export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [loadError, setLoadError] = useState<Error | null>(null);
   const setTotalPages = useReaderState((s) => s.setTotalPages);
   const totalPages = useReaderState((s) => s.totalPages);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const internalRef = useRef<HTMLDivElement>(null);
+  const containerRef = externalRef ?? internalRef;
 
   const onDocumentLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
