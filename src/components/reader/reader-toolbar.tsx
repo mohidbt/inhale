@@ -7,9 +7,11 @@ import { ZoomControls } from "./zoom-controls";
 
 interface ReaderToolbarProps {
   title: string;
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
-export function ReaderToolbar({ title }: ReaderToolbarProps) {
+export function ReaderToolbar({ title, sidebarOpen, onToggleSidebar }: ReaderToolbarProps) {
   const { currentPage, totalPages, setCurrentPage } = useReaderState();
 
   return (
@@ -41,6 +43,11 @@ export function ReaderToolbar({ title }: ReaderToolbarProps) {
           </Button>
         </div>
         <ZoomControls />
+        {onToggleSidebar && (
+          <Button variant={sidebarOpen ? "secondary" : "ghost"} size="sm" onClick={onToggleSidebar}>
+            Highlights
+          </Button>
+        )}
       </div>
     </header>
   );

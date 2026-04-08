@@ -1,0 +1,51 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+
+interface TextSelection {
+  text: string;
+  pageNumber: number;
+  startOffset: number;
+  endOffset: number;
+  rect: DOMRect;
+}
+
+export function useTextSelection() {
+  const [selection, setSelection] = useState<TextSelection | null>(null);
+
+  const handleSelectionChange = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+      setSelection(null);
+      return;
+    }
+
+    const text = sel.toString().trim();
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+
+    // Find which PDF page this selection is on via the data-page-number attribute
+    const pageEl = range.startContainer.parentElement?.closest("[data-page-number]");
+    const pageNumber = pageEl ? Number(pageEl.getAttribute("data-page-number")) : 1;
+
+    setSelection({
+      text,
+      pageNumber,
+      startOffset: range.startOffset,
+      endOffset: range.endOffset,
+      rect,
+    });
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+  }, [handleSelectionChange]);
+
+  const clearSelection = useCallback(() => {
+    window.getSelection()?.removeAllRanges();
+    setSelection(null);
+  }, []);
+
+  return { selection, clearSelection };
+}
