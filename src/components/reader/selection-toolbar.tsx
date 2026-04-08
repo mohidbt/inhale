@@ -10,10 +10,10 @@ const COLORS = [
   { name: "orange", class: "bg-orange-300" },
 ] as const;
 
-type HighlightColor = (typeof COLORS)[number]["name"];
+export type HighlightColor = (typeof COLORS)[number]["name"];
 
 interface SelectionToolbarProps {
-  rect: DOMRect;
+  rect: { top: number; left: number; width: number; height: number };
   onHighlight: (color: HighlightColor) => void;
   onDismiss: () => void;
 }
@@ -29,6 +29,7 @@ export function SelectionToolbar({ rect, onHighlight, onDismiss }: SelectionTool
     >
       {COLORS.map((c) => (
         <button
+          type="button"
           key={c.name}
           className={`h-6 w-6 rounded-full ${c.class} border border-black/10 hover:ring-2 ring-offset-1`}
           onClick={() => onHighlight(c.name)}

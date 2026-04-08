@@ -7,7 +7,7 @@ interface TextSelection {
   pageNumber: number;
   startOffset: number;
   endOffset: number;
-  rect: DOMRect;
+  rect: { top: number; left: number; width: number; height: number };
 }
 
 export function useTextSelection() {
@@ -22,7 +22,8 @@ export function useTextSelection() {
 
     const text = sel.toString().trim();
     const range = sel.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
+    const domRect = range.getBoundingClientRect();
+    const rect = { top: domRect.top, left: domRect.left, width: domRect.width, height: domRect.height };
 
     // Find which PDF page this selection is on via the data-page-number attribute
     const pageEl = range.startContainer.parentElement?.closest("[data-page-number]");

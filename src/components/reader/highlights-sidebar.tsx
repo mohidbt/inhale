@@ -30,23 +30,28 @@ export function HighlightsSidebar({ documentId, open, refreshKey = 0 }: Highligh
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadHighlights = useCallback(async () => {
+  const loadHighlights = useCallback(() => {
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch(`/api/documents/${documentId}/highlights`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setHighlights(data.highlights ?? []);
-    } catch {
-      setError("Failed to load highlights");
-    } finally {
-      setLoading(false);
-    }
+    fetch(`/api/documents/${documentId}/highlights`, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data) => setHighlights(data.highlights ?? []))
+      .catch((err: unknown) => {
+        if (err instanceof Error && err.name !== "AbortError") {
+          setError("Failed to load highlights");
+        }
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
   }, [documentId]);
 
   useEffect(() => {
-    if (open) loadHighlights();
+    if (!open) return;
+    return loadHighlights();
   }, [open, loadHighlights, refreshKey]);
 
   if (!open) return null;
