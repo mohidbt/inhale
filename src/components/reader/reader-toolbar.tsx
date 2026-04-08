@@ -26,7 +26,7 @@ export function ReaderToolbar({ title }: ReaderToolbarProps) {
             variant="ghost"
             size="sm"
             onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-            disabled={currentPage <= 1}
+            disabled={currentPage <= 1 || totalPages === 0}
           >
             Prev
           </Button>
@@ -35,7 +35,7 @@ export function ReaderToolbar({ title }: ReaderToolbarProps) {
             variant="ghost"
             size="sm"
             onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-            disabled={currentPage >= totalPages}
+            disabled={currentPage >= totalPages || totalPages === 0}
           >
             Next
           </Button>

@@ -43,7 +43,7 @@ export async function GET(
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
 
-  const safeFilename = doc.filename.replace(/[\\\"]/g, "");
+  const safeFilename = doc.filename.replace(/[^\x20-\x7E]|["\\]/g, "");
 
   return new NextResponse(new Blob([new Uint8Array(buffer)], { type: "application/pdf" }), {
     headers: {

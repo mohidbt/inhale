@@ -15,12 +15,14 @@ export default async function ReaderPage({
   if (!session?.user) redirect("/login");
 
   const { documentId } = await params;
+  const id = parseInt(documentId, 10);
+  if (isNaN(id)) notFound();
   const [doc] = await db
     .select()
     .from(documents)
     .where(
       and(
-        eq(documents.id, Number(documentId)),
+        eq(documents.id, id),
         eq(documents.userId, session.user.id)
       )
     )
