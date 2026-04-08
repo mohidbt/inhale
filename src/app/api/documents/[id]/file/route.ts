@@ -36,12 +36,19 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const buffer = await getFile(doc.filePath);
+  let buffer: Buffer;
+  try {
+    buffer = await getFile(doc.filePath);
+  } catch {
+    return NextResponse.json({ error: "File not found" }, { status: 404 });
+  }
 
-  return new NextResponse(new Uint8Array(buffer), {
+  const safeFilename = doc.filename.replace(/[\\\"]/g, "");
+
+  return new NextResponse(Uint8Array.from(buffer), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${doc.filename}"`,
+      "Content-Disposition": `inline; filename="${safeFilename}"`,
     },
   });
 }
