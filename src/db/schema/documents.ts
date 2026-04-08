@@ -1,5 +1,5 @@
 import { pgTable, text, timestamp, integer, serial, jsonb, pgEnum } from "drizzle-orm/pg-core";
-import { users } from "./users";
+import { user } from "./auth";
 
 export const processingStatusEnum = pgEnum("processing_status", [
   "pending",
@@ -10,9 +10,9 @@ export const processingStatusEnum = pgEnum("processing_status", [
 
 export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id")
+  userId: text("user_id")
     .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+    .references(() => user.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   filename: text("filename").notNull(),
   filePath: text("file_path").notNull(),
