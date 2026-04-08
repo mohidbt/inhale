@@ -45,9 +45,8 @@ export async function GET(
 
   const safeFilename = doc.filename.replace(/[\\\"]/g, "");
 
-  return new NextResponse(Uint8Array.from(buffer), {
+  return new NextResponse(new Blob([new Uint8Array(buffer)], { type: "application/pdf" }), {
     headers: {
-      "Content-Type": "application/pdf",
       "Content-Disposition": `inline; filename="${safeFilename}"`,
     },
   });
