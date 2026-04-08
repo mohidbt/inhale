@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { userHighlights } from "@/db/schema";
+import { documents } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+
+const VALID_COLORS = ["yellow", "green", "blue", "pink", "orange"] as const;
+type HighlightColor = typeof VALID_COLORS[number];
 
 export async function GET(
   request: NextRequest,
@@ -15,17 +19,21 @@ export async function GET(
   const documentId = parseInt(id, 10);
   if (isNaN(documentId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
 
-  const highlights = await db
-    .select()
-    .from(userHighlights)
-    .where(
-      and(
-        eq(userHighlights.documentId, documentId),
-        eq(userHighlights.userId, session.user.id)
-      )
-    );
+  try {
+    const highlights = await db
+      .select()
+      .from(userHighlights)
+      .where(
+        and(
+          eq(userHighlights.documentId, documentId),
+          eq(userHighlights.userId, session.user.id)
+        )
+      );
 
-  return NextResponse.json({ highlights });
+    return NextResponse.json({ highlights });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function POST(
@@ -41,21 +49,48 @@ export async function POST(
 
   const body = await request.json();
 
-  const [highlight] = await db
-    .insert(userHighlights)
-    .values({
-      userId: session.user.id,
-      documentId,
-      pageNumber: body.pageNumber,
-      textContent: body.textContent,
-      startOffset: body.startOffset,
-      endOffset: body.endOffset,
-      color: body.color ?? "yellow",
-      note: body.note ?? null,
-    })
-    .returning();
+  const { pageNumber, textContent, startOffset, endOffset, color, note } = body;
 
-  return NextResponse.json({ highlight }, { status: 201 });
+  if (
+    typeof pageNumber !== "number" ||
+    typeof textContent !== "string" || !textContent.trim() ||
+    typeof startOffset !== "number" ||
+    typeof endOffset !== "number"
+  ) {
+    return NextResponse.json({ error: "Invalid or missing fields" }, { status: 422 });
+  }
+
+  const resolvedColor: HighlightColor = (VALID_COLORS as readonly string[]).includes(color)
+    ? color as HighlightColor
+    : "yellow";
+
+  try {
+    const [doc] = await db
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(eq(documents.id, documentId), eq(documents.userId, session.user.id)))
+      .limit(1);
+
+    if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const [highlight] = await db
+      .insert(userHighlights)
+      .values({
+        userId: session.user.id,
+        documentId,
+        pageNumber,
+        textContent,
+        startOffset,
+        endOffset,
+        color: resolvedColor,
+        note: note ?? null,
+      })
+      .returning();
+
+    return NextResponse.json({ highlight }, { status: 201 });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function DELETE(
@@ -72,21 +107,26 @@ export async function DELETE(
   const highlightId = parseInt(url.searchParams.get("highlightId") ?? "", 10);
   if (isNaN(highlightId)) return NextResponse.json({ error: "highlightId required" }, { status: 400 });
 
-  // Verify ownership before deleting
-  const [existing] = await db
-    .select()
-    .from(userHighlights)
-    .where(
-      and(
-        eq(userHighlights.id, highlightId),
-        eq(userHighlights.userId, session.user.id)
+  try {
+    const [existing] = await db
+      .select()
+      .from(userHighlights)
+      .where(
+        and(
+          eq(userHighlights.id, highlightId),
+          eq(userHighlights.userId, session.user.id)
+        )
       )
-    )
-    .limit(1);
+      .limit(1);
 
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await db.delete(userHighlights).where(eq(userHighlights.id, highlightId));
+    await db.delete(userHighlights).where(
+      and(eq(userHighlights.id, highlightId), eq(userHighlights.userId, session.user.id))
+    );
 
-  return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
