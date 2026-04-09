@@ -21,6 +21,7 @@ interface PdfViewerProps {
 export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [loadError, setLoadError] = useState<Error | null>(null);
+  const [loading, setLoading] = useState(true);
   const setTotalPages = useReaderState((s) => s.setTotalPages);
   const totalPages = useReaderState((s) => s.totalPages);
   const internalRef = useRef<HTMLDivElement>(null);
@@ -28,6 +29,7 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
 
   const onDocumentLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
+      setLoading(false);
       setTotalPages(numPages);
     },
     [setTotalPages]
@@ -46,6 +48,12 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
   return (
     <div ref={containerRef} className="flex-1 overflow-auto bg-muted/30 p-6">
       <div className="mx-auto flex flex-col items-center">
+        {loading && !loadError && (
+          <div className="flex flex-col items-center justify-center gap-3 py-20">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+            <p className="text-sm text-muted-foreground">Loading PDF...</p>
+          </div>
+        )}
         {loadError && (
           <p className="text-destructive text-sm">
             Failed to load document. Please try again.

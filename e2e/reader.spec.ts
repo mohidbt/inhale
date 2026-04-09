@@ -1,0 +1,188 @@
+import { test, expect } from "@playwright/test";
+import { signUpAndLogin } from "./helpers/auth";
+import * as fs from "fs";
+import * as path from "path";
+
+test.describe("PDF Reader", () => {
+  let docId: number;
+
+  test.beforeEach(async ({ page }) => {
+    await signUpAndLogin(page);
+
+    const pdfPath = path.join(__dirname, "fixtures/test.pdf");
+    const pdfBuffer = fs.readFileSync(pdfPath);
+
+    const response = await page.request.post("/api/documents/upload", {
+      multipart: {
+        file: {
+          name: "test.pdf",
+          mimeType: "application/pdf",
+          buffer: pdfBuffer,
+        },
+      },
+    });
+
+    expect(response.status()).toBe(201);
+    const body = await response.json();
+    docId = body.document.id;
+  });
+
+  // --- Navigation ---
+
+  test("navigates to reader page for an uploaded document", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page).toHaveURL(new RegExp(`/reader/${docId}`));
+  });
+
+  test("visiting a nonexistent document ID returns 404", async ({ page }) => {
+    // User is already authenticated from beforeEach
+    const res = await page.request.get(`/api/documents/99999`);
+    expect(res.status()).toBe(404);
+  });
+
+  test("Back button navigates to library", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("link", { name: "Back" }).click();
+    await expect(page).toHaveURL(/\/library/);
+  });
+
+  // --- PDF Rendering ---
+
+  test("PDF renders a canvas element", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    const canvas = page.locator("canvas").first();
+    await expect(canvas).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("PDF text content is selectable", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+    const textLayer = page.locator(".react-pdf__Page__textContent");
+    await expect(textLayer).toBeVisible();
+    await expect(textLayer).toContainText("Test PDF Document");
+  });
+
+  test("reader loads within acceptable time", async ({ page }) => {
+    const start = Date.now();
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  // --- Toolbar & Page Navigation ---
+
+  test("toolbar is visible with page count and zoom controls", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+
+    const pageDisplay = page.locator("header").getByText(/\d+\s*\/\s*(\d+|—)/);
+    await expect(pageDisplay).toBeVisible();
+    await expect(page.locator("header").getByRole("button", { name: "+" })).toBeVisible();
+    await expect(page.locator("header").getByRole("button", { name: "-" })).toBeVisible();
+    await expect(page.locator("header").getByText(/%/)).toBeVisible();
+  });
+
+  test("page navigation shows correct count with Prev/Next disabled for single page", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+
+    await expect(page.locator("header").getByText("1 / 1")).toBeVisible();
+    await expect(page.locator("header").getByRole("button", { name: "Prev" })).toBeDisabled();
+    await expect(page.locator("header").getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  });
+
+  // --- Zoom ---
+
+  test("zoom in button increases the zoom percentage", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+
+    const zoomLabel = page.locator("header").getByText(/%/);
+    const initialZoom = parseInt(await zoomLabel.innerText(), 10);
+    await page.locator("header").getByRole("button", { name: "+" }).click();
+    const updatedZoom = parseInt(await zoomLabel.innerText(), 10);
+    expect(updatedZoom).toBeGreaterThan(initialZoom);
+  });
+
+  test("zoom out button decreases the zoom percentage", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+
+    const zoomLabel = page.locator("header").getByText(/%/);
+    const initialZoom = parseInt(await zoomLabel.innerText(), 10);
+    await page.locator("header").getByRole("button", { name: "-" }).click();
+    const updatedZoom = parseInt(await zoomLabel.innerText(), 10);
+    expect(updatedZoom).toBeLessThan(initialZoom);
+  });
+
+  test("Fit button resets zoom to 100%", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+
+    // Zoom in first
+    await page.locator("header").getByRole("button", { name: "+" }).click();
+    const zoomLabel = page.locator("header").getByText(/%/);
+    expect(parseInt(await zoomLabel.innerText(), 10)).toBeGreaterThan(100);
+
+    // Click Fit
+    await page.getByRole("button", { name: "Fit" }).click();
+    expect(parseInt(await zoomLabel.innerText(), 10)).toBe(100);
+  });
+
+  // --- Highlights Sidebar ---
+
+  test("Highlights sidebar opens with empty state", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole("button", { name: "Highlights" }).click();
+    await expect(page.getByRole("heading", { name: "Highlights" })).toBeVisible();
+    await expect(page.getByText(/No highlights yet/)).toBeVisible();
+  });
+
+  // --- Comments Sidebar ---
+
+  test("Comments sidebar opens with empty state", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole("button", { name: "Comments" }).click();
+    await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
+    await expect(page.getByText(/No comments yet/)).toBeVisible();
+  });
+
+  test("Add Comment flow — save and verify in sidebar", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+
+    // Open comment input
+    await page.getByRole("button", { name: "Add Comment" }).click();
+    const textarea = page.getByPlaceholder("Write a comment");
+    await expect(textarea).toBeVisible();
+
+    // Save button should be disabled when empty
+    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    // Type and save
+    await textarea.fill("E2E test comment");
+    await page.getByRole("button", { name: "Save" }).click();
+
+    // Verify in Comments sidebar
+    await page.getByRole("button", { name: "Comments" }).click();
+    await expect(page.getByText("E2E test comment")).toBeVisible();
+  });
+
+  // --- Chat Panel ---
+
+  test("Chat panel opens with AI Assistant heading", async ({ page }) => {
+    await page.goto(`/reader/${docId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole("button", { name: "Chat" }).click();
+    await expect(page.getByText("AI Assistant")).toBeVisible();
+    await expect(page.getByPlaceholder(/Ask about this paper/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+});
