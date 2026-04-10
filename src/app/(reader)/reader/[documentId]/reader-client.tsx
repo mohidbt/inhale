@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import { ReaderToolbar } from "@/components/reader/reader-toolbar";
-import { PdfViewer } from "@/components/reader/pdf-viewer";
 import { SelectionToolbar, type HighlightColor } from "@/components/reader/selection-toolbar";
 import { HighlightsSidebar } from "@/components/reader/highlights-sidebar";
 import { CommentThread } from "@/components/reader/comment-thread";
@@ -10,6 +10,21 @@ import { CommentInput } from "@/components/reader/comment-input";
 import { ChatPanel } from "@/components/reader/chat-panel";
 import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
+
+const PdfViewer = dynamic(
+  () => import("@/components/reader/pdf-viewer").then((m) => ({ default: m.PdfViewer })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-1 items-center justify-center bg-muted/30">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading PDF...</p>
+        </div>
+      </div>
+    ),
+  }
+);
 
 interface ReaderClientProps {
   documentId: number;

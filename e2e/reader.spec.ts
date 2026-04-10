@@ -186,3 +186,78 @@ test.describe("PDF Reader", () => {
     await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 });
+
+test.describe("PDF Reader - real paper benchmark", () => {
+  let realDocId: number;
+
+  test.beforeEach(async ({ page }) => {
+    await signUpAndLogin(page);
+
+    const pdfPath = path.join(__dirname, "fixtures/test_real_paper.pdf");
+    const pdfBuffer = fs.readFileSync(pdfPath);
+
+    const response = await page.request.post("/api/documents/upload", {
+      multipart: {
+        file: {
+          name: "test_real_paper.pdf",
+          mimeType: "application/pdf",
+          buffer: pdfBuffer,
+        },
+      },
+    });
+
+    expect(response.status()).toBe(201);
+    const body = await response.json();
+    realDocId = body.document.id;
+  });
+
+  test("real paper renders multiple pages", async ({ page }) => {
+    await page.goto(`/reader/${realDocId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Page counter should show a total > 1
+    const pageDisplay = page.locator("header").getByText(/\d+\s*\/\s*\d+/);
+    await expect(pageDisplay).toBeVisible();
+    const text = await pageDisplay.innerText();
+    const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+    expect(match).not.toBeNull();
+    const total = Number(match![2]);
+    expect(total).toBeGreaterThan(1);
+  });
+
+  test("Next button advances page counter and scrolls on real paper", async ({ page }) => {
+    await page.goto(`/reader/${realDocId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Wait until totalPages has loaded (counter no longer shows "—")
+    const pageDisplay = page.locator("header").getByText(/\d+\s*\/\s*\d+/);
+    await expect(pageDisplay).toBeVisible();
+    const initialText = await pageDisplay.innerText();
+    const initialMatch = initialText.match(/(\d+)\s*\/\s*(\d+)/);
+    expect(initialMatch).not.toBeNull();
+    expect(Number(initialMatch![1])).toBe(1);
+    const total = Number(initialMatch![2]);
+    expect(total).toBeGreaterThan(1);
+
+    // Click Next
+    await page.locator("header").getByRole("button", { name: "Next", exact: true }).click();
+
+    // Counter should become "2 / N"
+    await expect(page.locator("header").getByText(new RegExp(`2\\s*/\\s*${total}`))).toBeVisible();
+
+    // And the reader container should have scrolled past the top
+    const scrollTop = await page.evaluate(() => {
+      const el = document.querySelector(".flex-1.overflow-auto.bg-muted\\/30") as HTMLElement | null;
+      return el?.scrollTop ?? 0;
+    });
+    expect(scrollTop).toBeGreaterThan(0);
+  });
+
+  test("real paper loads within acceptable time", async ({ page }) => {
+    const start = Date.now();
+    await page.goto(`/reader/${realDocId}`);
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(5000);
+  });
+});

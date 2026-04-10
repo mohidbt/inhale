@@ -28,7 +28,7 @@ export function ReaderToolbar({
   chatOpen,
   onToggleChat,
 }: ReaderToolbarProps) {
-  const { currentPage, totalPages, setCurrentPage } = useReaderState();
+  const { currentPage, totalPages, setScrollTargetPage } = useReaderState();
 
   return (
     <header className="flex h-12 items-center justify-between border-b bg-background px-4">
@@ -43,7 +43,7 @@ export function ReaderToolbar({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+            onClick={() => setScrollTargetPage(Math.max(1, currentPage - 1))}
             disabled={currentPage <= 1 || totalPages === 0}
           >
             Prev
@@ -52,7 +52,7 @@ export function ReaderToolbar({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+            onClick={() => setScrollTargetPage(Math.min(totalPages, currentPage + 1))}
             disabled={currentPage >= totalPages || totalPages === 0}
           >
             Next

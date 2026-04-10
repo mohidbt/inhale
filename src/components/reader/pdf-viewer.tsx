@@ -24,6 +24,9 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
   const [loading, setLoading] = useState(true);
   const setTotalPages = useReaderState((s) => s.setTotalPages);
   const totalPages = useReaderState((s) => s.totalPages);
+  const scrollTargetPage = useReaderState((s) => s.scrollTargetPage);
+  const setScrollTargetPage = useReaderState((s) => s.setScrollTargetPage);
+  const setCurrentPage = useReaderState((s) => s.setCurrentPage);
   const internalRef = useRef<HTMLDivElement>(null);
   const containerRef = externalRef ?? internalRef;
 
@@ -43,7 +46,50 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [containerRef]);
+
+  // Scroll to an explicitly requested page (Prev/Next buttons, outline clicks, etc.)
+  // The observer will naturally update currentPage once the new page is visible.
+  useEffect(() => {
+    if (scrollTargetPage === null) return;
+    const el = containerRef.current;
+    if (!el) {
+      setScrollTargetPage(null);
+      return;
+    }
+    const pageEl = el.querySelector(`[data-page-number="${scrollTargetPage}"]`);
+    if (pageEl) {
+      (pageEl as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setScrollTargetPage(null);
+  }, [scrollTargetPage, containerRef, setScrollTargetPage]);
+
+  // Sync currentPage with the most visible page as the user scrolls.
+  // This is purely observational — it never triggers programmatic scrolling.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || totalPages <= 0) return;
+    const pageEls = el.querySelectorAll("[data-page-number]");
+    if (pageEls.length === 0) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        let bestRatio = 0;
+        let bestPage = 0;
+        for (const entry of entries) {
+          if (entry.intersectionRatio > bestRatio) {
+            bestRatio = entry.intersectionRatio;
+            const n = Number((entry.target as HTMLElement).dataset.pageNumber);
+            if (Number.isFinite(n)) bestPage = n;
+          }
+        }
+        if (bestPage > 0) setCurrentPage(bestPage);
+      },
+      { root: el, threshold: [0.25, 0.5, 0.75] }
+    );
+    pageEls.forEach((pageEl) => io.observe(pageEl));
+    return () => io.disconnect();
+  }, [totalPages, containerWidth, containerRef, setCurrentPage]);
 
   return (
     <div ref={containerRef} className="flex-1 overflow-auto bg-muted/30 p-6">
