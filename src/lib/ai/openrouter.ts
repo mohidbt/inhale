@@ -5,10 +5,10 @@ import { and, eq } from "drizzle-orm";
 import { decrypt } from "@/lib/encryption";
 
 /**
- * Returns an initialized OpenRouter client for the given user.
+ * Returns the decrypted API key for the given user.
  * Throws Error("NO_LLM_KEY") if the user has not stored an LLM key.
  */
-export async function getOpenRouterClient(userId: string): Promise<OpenRouter> {
+export async function getDecryptedApiKey(userId: string): Promise<string> {
   const [row] = await db
     .select({ encryptedKey: userApiKeys.encryptedKey })
     .from(userApiKeys)
@@ -20,7 +20,15 @@ export async function getOpenRouterClient(userId: string): Promise<OpenRouter> {
     throw new Error("NO_LLM_KEY");
   }
 
-  const apiKey = decrypt(row.encryptedKey);
+  return decrypt(row.encryptedKey);
+}
+
+/**
+ * Returns an initialized OpenRouter client for the given user.
+ * Throws Error("NO_LLM_KEY") if the user has not stored an LLM key.
+ */
+export async function getOpenRouterClient(userId: string): Promise<OpenRouter> {
+  const apiKey = await getDecryptedApiKey(userId);
   return new OpenRouter({ apiKey });
 }
 

@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { saveFile } from "@/lib/storage";
 import { extractPdfPages } from "@/lib/ai/pdf-text";
 import { chunkPages } from "@/lib/ai/chunking";
-import { embedTexts } from "@/lib/ai/embeddings";
+import { embedTexts, getDecryptedApiKey } from "@/lib/ai/embeddings";
 
 export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -42,35 +42,51 @@ export async function POST(request: NextRequest) {
     const pages = await extractPdfPages(doc.filePath);
     const chunks = chunkPages(pages);
 
-    const BATCH = 64;
-    const embeddings: number[][] = [];
-    for (let i = 0; i < chunks.length; i += BATCH) {
-      const batch = chunks.slice(i, i + BATCH).map((c) => c.content);
-      const vecs = await embedTexts(session.user.id, batch);
-      embeddings.push(...vecs);
+    if (chunks.length === 0) {
+      await db
+        .update(documents)
+        .set({ processingStatus: "ready", pageCount: pages.length })
+        .where(eq(documents.id, doc.id));
+    } else {
+      const apiKey = await getDecryptedApiKey(session.user.id);
+
+      const BATCH = 64;
+      const embeddings: number[][] = [];
+      for (let i = 0; i < chunks.length; i += BATCH) {
+        const batch = chunks.slice(i, i + BATCH).map((c) => c.content);
+        const vecs = await embedTexts(apiKey, batch);
+        embeddings.push(...vecs);
+      }
+
+      if (embeddings.length !== chunks.length) {
+        throw new Error(
+          `Embedding count mismatch: got ${embeddings.length}, expected ${chunks.length}`
+        );
+      }
+
+      await db.insert(documentChunks).values(
+        chunks.map((c, i) => ({
+          documentId: doc.id,
+          chunkIndex: c.chunkIndex,
+          content: c.content,
+          pageStart: c.pageStart,
+          pageEnd: c.pageEnd,
+          tokenCount: c.tokenCount,
+          embedding: embeddings[i],
+        }))
+      );
+
+      await db
+        .update(documents)
+        .set({ processingStatus: "ready", pageCount: pages.length })
+        .where(eq(documents.id, doc.id));
     }
-
-    await db.insert(documentChunks).values(
-      chunks.map((c, i) => ({
-        documentId: doc.id,
-        chunkIndex: c.chunkIndex,
-        content: c.content,
-        pageStart: c.pageStart,
-        pageEnd: c.pageEnd,
-        tokenCount: c.tokenCount,
-        embedding: embeddings[i],
-      }))
-    );
-
-    await db
-      .update(documents)
-      .set({ processingStatus: "ready", pageCount: pages.length })
-      .where(eq(documents.id, doc.id));
   } catch (err) {
     console.error("Inline processing failed", err);
     await db.update(documents).set({ processingStatus: "failed" }).where(eq(documents.id, doc.id));
     // Still return 201 — file is uploaded, processing failed separately
   }
 
-  return NextResponse.json({ document: doc }, { status: 201 });
+  const [updatedDoc] = await db.select().from(documents).where(eq(documents.id, doc.id));
+  return NextResponse.json({ document: updatedDoc ?? doc }, { status: 201 });
 }
