@@ -57,7 +57,11 @@ export function ConceptsPanel({ selectedText, open }: ConceptsPanelProps) {
           for (const part of parts) {
             if (!part.startsWith("data: ")) continue;
             const data = part.slice(6).trim();
-            if (data === "[DONE]" || data.startsWith("[ERROR]")) break;
+            if (data === "[DONE]") break;
+            if (data.startsWith("[ERROR]")) {
+              setError(data.slice(7).trim() || "Explanation failed");
+              break;
+            }
             setExplanation((prev) => prev + data);
           }
         }
