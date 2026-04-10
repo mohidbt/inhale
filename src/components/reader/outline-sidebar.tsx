@@ -2,23 +2,29 @@
 
 import { useEffect, useState, useCallback } from "react";
 
-interface OutlineItem {
-  title: string;
+interface DocumentSection {
+  id: number;
+  documentId: number;
+  sectionIndex: number;
+  title: string | null;
+  content: string;
   pageStart: number;
-  summary: string;
+  pageEnd: number;
+  createdAt: string;
 }
 
 interface OutlineSidebarProps {
   documentId: number;
   open: boolean;
+  onNavigate?: (page: number) => void;
 }
 
-export function OutlineSidebar({ documentId, open }: OutlineSidebarProps) {
-  const [outline, setOutline] = useState<OutlineItem[]>([]);
+export function OutlineSidebar({ documentId, open, onNavigate }: OutlineSidebarProps) {
+  const [sections, setSections] = useState<DocumentSection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadOutline = useCallback(() => {
+  const loadSections = useCallback(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -27,7 +33,7 @@ export function OutlineSidebar({ documentId, open }: OutlineSidebarProps) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((data) => setOutline(data.outline ?? []))
+      .then((data) => setSections(data.sections ?? []))
       .catch((err: unknown) => {
         if (err instanceof Error && err.name !== "AbortError") {
           setError("Failed to load outline");
@@ -39,8 +45,8 @@ export function OutlineSidebar({ documentId, open }: OutlineSidebarProps) {
 
   useEffect(() => {
     if (!open) return;
-    return loadOutline();
-  }, [open, loadOutline]);
+    return loadSections();
+  }, [open, loadSections]);
 
   if (!open) return null;
 
@@ -52,17 +58,25 @@ export function OutlineSidebar({ documentId, open }: OutlineSidebarProps) {
       <div className="flex-1 overflow-auto p-4">
         {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
         {error && <p className="text-xs text-destructive">{error}</p>}
-        {!loading && !error && outline.length === 0 && (
+        {!loading && !error && sections.length === 0 && (
           <p className="text-xs text-muted-foreground">No outline generated yet.</p>
         )}
-        {!loading && !error && outline.length > 0 && (
+        {!loading && !error && sections.length > 0 && (
           <div className="space-y-4">
-            {outline.map((item, i) => (
-              <div key={i} className="space-y-1">
-                <p className="text-xs font-medium leading-snug">{item.title}</p>
-                <p className="text-[10px] text-muted-foreground">Page {item.pageStart}</p>
-                <p className="text-xs text-muted-foreground leading-relaxed">{item.summary}</p>
-              </div>
+            {sections.map((section) => (
+              <button
+                key={section.id}
+                className="w-full space-y-1 text-left"
+                onClick={() => onNavigate?.(section.pageStart)}
+              >
+                <p className="text-xs font-medium leading-snug">{section.title ?? "Untitled"}</p>
+                <p className="text-[10px] text-muted-foreground">Page {section.pageStart}</p>
+                {section.content && (
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                    {section.content}
+                  </p>
+                )}
+              </button>
             ))}
           </div>
         )}
