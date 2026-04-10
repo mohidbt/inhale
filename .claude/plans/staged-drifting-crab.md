@@ -2,7 +2,7 @@
 
 ## Context
 
-Inhale is an AI-enhanced interactive PDF reader for scientific papers. The PRD/ERD defines a 5-phase roadmap (Phases 0-4) with 17 core database entities, a dual-stack architecture (Next.js frontend + FastAPI backend), and a BYOK model where users bring their own API keys for AI features.
+Inhale is an AI-enhanced interactive PDF reader for scientific papers. The PRD/ERD defines a 5-phase roadmap (Phases 0-4) with 17 core database entities and a BYOK model where users bring their own API keys for AI features. **Architecture**: pure Next.js (App Router) — all CRUD, auth, and AI features run inside Next.js API routes. The original PRD specced a Python FastAPI + Celery service for processing; that has been dropped in favor of inline Next.js routes calling the OpenRouter TypeScript SDK directly. Revisit a separate worker only when v0 latency proves unacceptable.
 
 **Current state**: Next.js 16 + React 19 + Tailwind 4 + shadcn/ui (base-nova) boilerplate with a dummy landing page. No backend, no database, no auth, no PDF rendering — we're building from scratch.
 
@@ -22,12 +22,10 @@ Inhale is an AI-enhanced interactive PDF reader for scientific papers. The PRD/E
 | **0.3 — PDF Reader** | DONE | react-pdf v10, Turbopack canvas alias, Zustand reader state, toolbar, zoom, page nav. |
 | **0.4 — Highlighting** | DONE | user_highlights schema, highlight CRUD API, text selection, highlight layer placeholder, highlights sidebar, SelectionToolbar. |
 | **0.5 — Comments & BYOK Settings** | DONE | user_comments schema + CRUD API, CommentInput/CommentThread UI, AES-256-GCM encryption, BYOK settings page + API. |
-| **1.0 — FastAPI Service Bootstrap** | DONE | FastAPI + async SQLAlchemy (read-only), Celery + Redis, health check, /extract stub, Dockerfile, docker-compose processing service with pg healthcheck. |
-| **1.1 — Celery Pipeline & Processing** | DONE | document_sections/chunks/processing_jobs schemas, Celery task stubs, ProcessingBadge UI. |
-| **1.2 — AI Outline & Concepts** | DONE | document_outlines schema, LLM service (OpenRouter), generate_outline Celery task, outline-sidebar + concepts-panel components, /api/documents/[id]/outline route. |
-| **1.3 — RAG Q&A + Viewport Awareness** | DONE | agent_conversations/messages schemas, /rag/chat SSE endpoint, use-viewport-tracking + use-chat hooks, ChatMessage + ChatPanel components, reader integration. |
-| 2.0–3.3 | Pending | — |
-| 4.0–4.4 | Pending | — |
+| **1.0 — BYOK OpenRouter (server-side)** | PARTIAL | Schema only: `user_api_keys` exists with AES-256-GCM encryption helper. Runtime helper (`src/lib/ai/openrouter.ts`) and live ping not yet built. FastAPI bootstrap from prior plan revision is being deleted. |
+| **1.1 — Document Chunking + pgvector** | PARTIAL | Schemas only: `document_sections`, `document_chunks`, `processing_jobs` tables exist. pgvector extension not enabled, no `embedding` column, no chunker, no upload-time write path. |
+| **1.2 — AI Outline (Next.js route)** | PARTIAL | Schema only: `document_outlines` exists. `/api/documents/[id]/outline` route exists but currently proxies a nonexistent FastAPI service. Outline-sidebar UI component exists. Needs full server-side rewrite. |
+| **1.3 — Minimal RAG Chat (Next.js)** | PARTIAL | Schemas only: `agent_conversations`, `agent_messages` exist. `use-chat.ts` + `chat-panel.tsx` UI exist but POST to `http://localhost:8000/rag/chat` (does not exist). Needs `/api/documents/[id]/chat` SSE route and client URL swap. |
 | 2.0–3.3 | Pending | — |
 | 4.0–4.4 | Pending | — |
 
@@ -37,20 +35,20 @@ Inhale is an AI-enhanced interactive PDF reader for scientific papers. The PRD/E
 
 | Decision | Choice | Why |
 |---|---|---|
-| **Backend split** | Next.js API routes for CRUD/auth + FastAPI for heavy processing (OCR, RAG, embeddings) | Avoids dual-stack overhead for simple ops; keeps Python where its ecosystem is superior |
+| **Backend** | Next.js API routes for everything (CRUD, auth, AI, RAG) | Single stack, single deploy. v0 scope is small enough that a Python service adds more friction than value. Revisit if heavy OCR/embedding workloads outgrow serverless function limits. |
+| **AI SDK** | `@openrouter/sdk` (TypeScript) called from Next.js routes | One BYOK key per user, multi-model access, native streaming via `getTextStream()`. **Not using LangChain TS** — OpenRouter SDK's `callModel` + `tool()` + `stopWhen` covers v0 scope; revisit LangChain if/when multi-agent or HITL workflows are needed. |
+| **Background processing** | None (inline on request) | v0 scope: chunk + embed inline on upload, generate outline on demand. Accept latency. No Celery, no Redis queue, no BullMQ. Revisit when a single doc takes >30s to process. |
 | **Auth** | Better Auth (self-hosted TS lib) | Email+password built-in, OAuth plugin later, stores in your Postgres, no vendor lock-in |
-| **ORM (JS)** | Drizzle ORM | Lightweight, SQL-like, excellent TS inference, schema-as-code |
-| **ORM (Python)** | SQLAlchemy 2.0 (async, **read-only schema reflection**) | Mature, pgvector extension, same DB. **Drizzle owns all migrations — SQLAlchemy models mirror but never create/alter tables.** |
+| **ORM** | Drizzle ORM | Lightweight, SQL-like, excellent TS inference, schema-as-code. Single source of truth for all migrations. |
 | **Streaming** | SSE for text agent + all AI features; WebSocket only for voice | SSE is simpler, works through Vercel/Cloudflare without special config, auto-reconnects |
-| **PDF rendering** | react-pdf v9 (wraps PDF.js) | React 19 support, canvas + text layer |
+| **PDF rendering** | react-pdf v10 (wraps PDF.js) | React 19 support, canvas + text layer |
 | **Reader state** | Zustand | Minimal boilerplate for page/zoom/scroll state |
-| **Vector DB** | PGVector (Postgres extension) | No separate service, lives in existing Postgres |
-| **Task queue** | Celery + Redis | Standard Python background processing |
+| **Vector DB** | pgvector (Postgres extension) | No separate service, lives in existing Postgres |
 | **LLM** | OpenRouter (BYOK) | User provides key, multi-model access |
 | **OCR** | Mistral OCR API (BYOK) | Best-in-class for scientific PDFs |
 | **Citations** | Semantic Scholar API (free) | Comprehensive, good rate limits |
 | **Encryption** | Node.js crypto AES-256-GCM | Built-in, zero dependencies |
-| **Repo structure** | Monorepo: `src/` (Next.js) + `services/processing/` (FastAPI) | Simple, shared DB, one git history |
+| **Repo structure** | Single Next.js app under `src/` | Simple, one git history, one deploy target |
 
 ---
 
@@ -164,60 +162,162 @@ Inhale is an AI-enhanced interactive PDF reader for scientific papers. The PRD/E
 
 ## Phase 1: First AI Features
 
-### 1.0 — FastAPI Service Bootstrap
+> **Architectural note**: Phase 1 was originally specced as a Python FastAPI + Celery service. That has been removed. All AI features run inside Next.js API routes calling the OpenRouter TypeScript SDK directly. The `services/processing/` directory will be deleted as part of Phase 1.0 execution. **Not using LangChain TS** — OpenRouter SDK's `callModel` + `tool()` + `stopWhen` covers v0 scope; revisit LangChain only if/when multi-agent or HITL workflows are needed.
 
-**Build**: FastAPI project structure, SQLAlchemy models mirroring Drizzle schema, health check, text extraction endpoint, Docker Compose update. **Convention established from day 1**: Drizzle is the single source of truth for all schema changes. SQLAlchemy models are read-only reflections — they never create or alter tables. All migrations run through `drizzle-kit`.
+### 1.0 — BYOK OpenRouter (server-side)
 
-**Python deps**: `fastapi`, `uvicorn`, `sqlalchemy`, `asyncpg`, `httpx`, `celery`, `redis`
+**Build**: Server-side OpenRouter client factory keyed by `userId`. Decrypts the user's stored API key and returns an initialized SDK client. One live ping confirms the wiring end-to-end. **First execution step**: delete `services/processing/` and remove its references from `docker-compose.yml` (if still present) and any tooling.
 
-**Files**:
-- `/services/processing/app/main.py`, `/services/processing/app/config.py`
-- `/services/processing/app/models/`, `/services/processing/app/routers/`
-- `/services/processing/requirements.txt`, `/services/processing/Dockerfile`
-
-**Done when**: FastAPI runs in Docker, health check works, can trigger text extraction on a document.
-
-### 1.1 — Celery Pipeline & Processing
-
-**Build**: Celery worker config, background processing pipeline (OCR -> section split -> chunking -> embedding), processing status tracking, frontend status indicator.
-
-**DB**: Add `document_sections`, `document_chunks`, `processing_jobs` tables.
+**Install**: `@openrouter/sdk` (latest stable from npm)
 
 **Files**:
-- `/services/processing/app/celery_app.py`
-- `/services/processing/app/tasks/process_document.py`, `generate_embeddings.py`
-- `/services/processing/app/services/chunking.py`, `embeddings.py`
-- `/src/db/schema/document-sections.ts`, `document-chunks.ts`, `processing-jobs.ts`
-- `/src/components/library/processing-badge.tsx`
+- `/src/lib/ai/openrouter.ts` — exports `getOpenRouterClient(userId: number)`:
+  1. Query `userApiKeys` via Drizzle for the row where `user_id = userId AND provider_type = 'llm'`
+  2. If no row, throw a typed error (`MissingApiKeyError`) the route can map to a 412 Precondition Failed
+  3. Decrypt `encrypted_key` using the existing AES-256-GCM helper in `src/lib/encryption.ts` (`decrypt(ciphertext)`)
+  4. Return `new OpenRouter({ apiKey })` from `@openrouter/sdk`
+- `/src/app/api/ai/ping/route.ts` — throwaway dev-only route. GET handler:
+  1. `getSession()` via better-auth
+  2. `client = await getOpenRouterClient(session.user.id)`
+  3. `const text = await client.callModel({ model: 'openai/gpt-4o-mini', input: 'ping' }).getText()`
+  4. Return `{ ok: true, text }`
+  5. Delete this route once verified (or gate behind `process.env.NODE_ENV !== 'production'`)
 
-**Done when**: Upload triggers background processing, status shows on document cards, embeddings stored in pgvector.
+**Delete**:
+- `services/processing/` (entire directory)
+- Any `processing` service block in `docker-compose.yml`
+- Any references to `localhost:8000` or the FastAPI service in env files
 
-### 1.2 — AI Outline & Section Preview
+**Done when**: Logged-in user with a saved OpenRouter key can hit `/api/ai/ping` and receive a non-empty `text`. Decrypt path is exercised. `services/processing/` no longer exists in the repo.
 
-**Build**: LLM-generated outline, section preview popovers, concepts breakdown panel. All AI calls use user's BYOK key.
+### 1.1 — Document Chunking + pgvector
 
-**DB**: Add `document_outlines` table.
+**Build**: Enable pgvector, add `embedding` column to `document_chunks`, chunk + embed PDF text inline at upload time, store rows. **No queue, no worker** — runs synchronously in the upload handler. Accept the latency for v0.
+
+**DB migration** (Drizzle):
+- `CREATE EXTENSION IF NOT EXISTS vector;` (raw SQL in a new migration)
+- Add `embedding vector(1536)` to `document_chunks` (1536 dim matches `text-embedding-3-small`; if a different model is used, update the column dim to match)
+- Add a cosine similarity index: `CREATE INDEX ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);`
 
 **Files**:
-- `/services/processing/app/tasks/generate_outline.py`, `extract_concepts.py`
-- `/services/processing/app/services/llm.py` — OpenRouter client
-- `/src/components/reader/outline-sidebar.tsx`, `section-preview.tsx`, `concepts-panel.tsx`
+- `/src/lib/ai/chunking.ts` — `chunkText(text: string, opts?: { maxTokens?: number; overlapTokens?: number }): Array<{ text: string; pageNumber: number; charStart: number; charEnd: number }>`
+  - Simple splitter: split on paragraph boundaries first, then pack paragraphs into ~500-token windows with ~50-token overlap. Use a rough char-to-token heuristic (4 chars/token) — no tokenizer dep.
+  - Preserve `pageNumber` by tracking page breaks from the upstream extractor.
+- `/src/lib/ai/embeddings.ts` — `embedTexts(client, texts: string[]): Promise<number[][]>`
+  - **Embeddings decision**: as of writing, the `@openrouter/sdk` TS package's primary surface is `callModel` for chat/completion. If the SDK exposes an `embeddings` method, use it: `client.embeddings.create({ model: 'openai/text-embedding-3-small', input: texts })`. **If it does not**, call OpenRouter's OpenAI-compatible REST endpoint directly via `fetch`:
+    ```
+    POST https://openrouter.ai/api/v1/embeddings
+    Authorization: Bearer <decrypted user key>
+    { "model": "openai/text-embedding-3-small", "input": [...] }
+    ```
+    Response shape mirrors OpenAI: `{ data: [{ embedding: number[] }, ...] }`. Verify the SDK surface during execution and pick whichever works; the rest of the code path is identical.
+  - **Hard fallback** (only if OpenRouter embeddings turn out to be unavailable for the user's plan): mark the column nullable and skip embedding at upload. RAG retrieval (Phase 1.3) falls back to Postgres FTS/`ts_rank` over `document_chunks.text`. Document this in the code as a TODO.
+- `/src/app/api/documents/upload/route.ts` — extend the existing upload handler:
+  1. After the existing PDF save + page-count step, extract full text per page (use the same `pdfjs-dist` import already in the file)
+  2. `chunkText(...)` -> array of chunks
+  3. `getOpenRouterClient(userId)` -> `embedTexts(client, chunks.map(c => c.text))`
+  4. Insert into `document_chunks` (one row per chunk, including `embedding`)
+  5. Update `documents.processing_status` to `ready` on success, `failed` on error
+- Update `/src/db/schema/document-chunks.ts` — add `embedding` column using Drizzle's pgvector helper (see drizzle-orm pgvector docs; likely `vector('embedding', { dimensions: 1536 })`)
 
-**Done when**: Processed docs show AI outline. Clicking sections shows summaries. Concepts panel explains key terms.
+**Done when**: Upload a 5-page PDF → `document_chunks` rows exist with non-null `embedding` vectors → a hand-run cosine query (`SELECT id, text FROM document_chunks WHERE document_id = ? ORDER BY embedding <=> $1 LIMIT 5`) returns chunks visibly relevant to the query.
 
-### 1.3 — Basic RAG Q&A + Viewport Awareness
+### 1.2 — AI Outline (Next.js route)
 
-**Build**: Chat panel in reader, RAG pipeline (embed question -> vector search -> LLM answer with citations), conversation persistence. **Viewport tracking**: debounced scroll listener sends `{ page, visible_section_ids, scroll_pct }` with each chat message so the agent knows what the user is looking at. Streaming via **SSE** (not WebSocket).
-
-**DB**: Add `agent_conversations`, `agent_messages` tables (messages store `viewport_context` JSONB).
+**Build**: Move outline generation into a Next.js route. Server-side: load doc text, call OpenRouter, persist sections. Reuse the existing outline-sidebar UI unchanged.
 
 **Files**:
-- `/services/processing/app/routers/rag.py`, `/services/processing/app/services/rag.py`
-- `/src/components/reader/chat-panel.tsx`, `chat-message.tsx`
-- `/src/hooks/use-chat.ts`
-- `/src/hooks/use-viewport-tracking.ts` — debounced scroll listener (500ms), resolves visible section IDs from document sections
+- `/src/app/api/documents/[id]/outline/route.ts` — replace the current FastAPI proxy. Match the HTTP method the existing frontend already calls (check `outline-sidebar.tsx` for the fetch call before changing). Handler:
+  1. `getSession()` via better-auth, 401 on missing
+  2. Load `document` by id, verify `document.user_id === session.user.id`, 403 otherwise
+  3. Load chunked text (concat `document_chunks.text` ordered by `page_number, char_start`, or fall back to re-extracting from the stored PDF)
+  4. `client = await getOpenRouterClient(session.user.id)`
+  5. ```
+     const result = await client.callModel({
+       model: 'openai/gpt-4o-mini',
+       instructions: 'You are an academic paper outliner. Return JSON: { sections: [{ title, summary, page_start }] }',
+       input: documentText.slice(0, 80_000), // hard cap; tune as needed
+       stopWhen: [stepCountIs(3)],
+     })
+     const json = JSON.parse(await result.getText())
+     ```
+  6. Insert rows into `document_outlines` (or `document_sections` — confirm which table the existing outline-sidebar reads from before writing)
+  7. Return the outline JSON
+- Leave `/src/components/reader/outline-sidebar.tsx` and related UI components untouched if their current fetch already targets `/api/documents/[id]/outline`. If not, adjust only the URL.
 
-**Done when**: User asks question about paper, gets grounded AI answer with section references. Agent system prompt includes current viewport section. Responses stream via SSE.
+**Done when**: Upload a PDF → click the outline button in the reader → outline rows appear in the DB and render in the sidebar within ~10s.
+
+### 1.3 — Minimal RAG Chat (Next.js)
+
+**Build**: Replace the dead `http://localhost:8000/rag/chat` endpoint with a Next.js SSE route. Embed question, run pgvector similarity search, optionally bias by viewport page, build prompt, stream answer back in the OpenAI SSE format the existing `chat-panel.tsx` expects. Persist conversation.
+
+**Server files**:
+- `/src/app/api/documents/[id]/chat/route.ts` — POST handler. Body: `{ messages: [{ role, content }], viewport_context?: { page?: number, visible_section_ids?: number[], scroll_pct?: number } }`. Flow:
+  1. `getSession()` via better-auth → 401
+  2. Load `document`, verify ownership → 403
+  3. `client = await getOpenRouterClient(session.user.id)`
+  4. `question = messages.at(-1).content`
+  5. `[questionEmbedding] = await embedTexts(client, [question])` (reuses Phase 1.1 helper)
+  6. pgvector query against `document_chunks` filtered by `document_id`:
+     ```sql
+     SELECT id, text, page_number,
+            1 - (embedding <=> $1) AS similarity
+     FROM document_chunks
+     WHERE document_id = $2
+     ORDER BY embedding <=> $1
+     LIMIT 5
+     ```
+     Use Drizzle's raw SQL helper (`sql\`...\``) for the vector ops.
+  7. **Viewport bias**: if `viewport_context.page` is provided, re-rank: add `+0.1` to similarity for chunks where `abs(page_number - viewport.page) <= 1`. Re-sort and take top 5.
+  8. Build system prompt:
+     ```
+     You are answering questions about a specific document. Use only the
+     provided context to answer. Cite page numbers like [p. 3]. If the
+     answer is not in the context, say so.
+
+     Context:
+     ---
+     [chunk 1 text] (page 3)
+     [chunk 2 text] (page 5)
+     ...
+     ```
+  9. ```
+     const result = await client.callModel({
+       model: 'openai/gpt-4o-mini',
+       instructions: systemPrompt,
+       input: messages,
+     })
+     const stream = result.getTextStream()
+     ```
+  10. Wrap the text stream in an SSE `ReadableStream` that emits chunks in the OpenAI delta format the existing client parses:
+      ```
+      data: {"choices":[{"delta":{"content":"<chunk>"}}]}\n\n
+      ```
+      and a terminal `data: [DONE]\n\n`. Return a `Response` with `Content-Type: text/event-stream`.
+  11. After the stream completes, persist:
+      - upsert `agent_conversations` row (one per `document_id` + user, or new per session — match whatever the existing schema expects)
+      - insert one `agent_messages` row for the user question (with `viewport_context` JSONB)
+      - insert one `agent_messages` row for the assistant answer (full text, not deltas)
+  12. On error mid-stream, send `data: {"error":"..."}\n\n` then close — `chat-panel.tsx` already handles this.
+
+**Client changes**:
+- `/src/hooks/use-chat.ts`:
+  - Change POST URL from `http://localhost:8000/rag/chat` to `/api/documents/${documentId}/chat`
+  - Remove the `api_key` field from the request body (server now reads it from the DB)
+  - Keep the SSE parsing logic — the response format is unchanged
+- `/src/app/(reader)/reader/[documentId]/reader-client.tsx`:
+  - Delete the `useEffect` that fetches `/api/settings/api-keys`
+  - Delete the `apiKey` state variable
+  - Delete the `apiKey` prop passed to `<ChatPanel />`
+- `/src/components/reader/chat-panel.tsx`:
+  - Remove the `apiKey` prop from the component signature and any code that forwards it to `useChat`
+- `/src/hooks/use-viewport-tracking.ts` — leave unchanged; the viewport object is now sent to the new route
+
+**Done when**:
+- User opens reader, opens chat panel, asks "what is this document about?" → answer streams in token-by-token
+- User asks a question whose answer lives on page 3 → answer cites `[p. 3]` and quotes/paraphrases content from that page
+- New row in `agent_conversations`, one user + one assistant row in `agent_messages` per turn
+- Citations as clickable markers are explicitly **out of scope for v0** — track as Phase 2 followup
 
 ---
 
@@ -269,7 +369,7 @@ Export references as BibTeX, copy individual citations.
 0.0 (Infra) → 0.1 (Auth) → 0.2 (Upload) → 0.3 (Reader) → 0.4 (Highlights) → 0.5 (Comments/BYOK)
                                                 |
                                                 v
-                                          1.0 (FastAPI) → 1.1 (Pipeline) → 1.2 (Outline) + 1.3 (RAG)
+                                  1.0 (BYOK OpenRouter) → 1.1 (Chunking + pgvector) → 1.2 (Outline) + 1.3 (RAG Chat)
                                                                                 |
                                                                     2.0–2.3 (independent of each other)
                                                                                 |
@@ -296,9 +396,8 @@ Export references as BibTeX, copy individual citations.
 After each sub-phase:
 1. Run `npm run build` — zero TypeScript errors
 2. Run `npm run dev` — verify the feature works in browser
-3. `docker compose up` — verify backend services (from Phase 1.0+)
-4. Manual test the acceptance criteria listed per sub-phase
-5. Commit with descriptive message before moving to next sub-phase
+3. Manual test the acceptance criteria listed per sub-phase
+4. Commit with descriptive message before moving to next sub-phase
 
 ---
 

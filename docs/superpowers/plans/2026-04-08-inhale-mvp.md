@@ -4,9 +4,11 @@
 
 **Goal:** Build an AI-enhanced interactive PDF reader for scientific papers where every element is interactive and AI-augmented, using a BYOK (Bring Your Own Key) model.
 
-**Architecture:** Hybrid monorepo — Next.js 16 App Router handles CRUD/auth/frontend, FastAPI handles heavy processing (OCR, RAG, embeddings). Postgres 16 + pgvector for storage and vector search. Drizzle ORM owns all migrations; SQLAlchemy mirrors read-only. SSE for AI streaming, WebSocket only for voice mode.
+**Architecture:** Pure Next.js 16 App Router monorepo. CRUD, auth, AI/RAG, and document processing all run as Next.js route handlers and server actions — no separate Python service. Postgres 16 + pgvector for storage and vector search. Drizzle ORM owns the schema. SSE for AI streaming, WebSocket only for voice mode (Phase 3.2).
 
-**Tech Stack:** Next.js 16, React 19, Tailwind 4, shadcn/ui (nova), Better Auth, Drizzle ORM, react-pdf v9, Zustand, FastAPI, SQLAlchemy 2.0, Celery + Redis, PGVector, OpenRouter (BYOK), Node.js crypto AES-256-GCM
+**Tech Stack:** Next.js 16, React 19, Tailwind 4, shadcn/ui (nova), Better Auth, Drizzle ORM, react-pdf v9, Zustand, `@openrouter/sdk` (BYOK), pgvector (Postgres extension), Node.js crypto AES-256-GCM
+
+> **Not using LangChain TS.** OpenRouter SDK's `callModel` + `tool()` + `stopWhen` covers v0 RAG and any future tool use. Revisit LangChain/LangGraph if/when multi-agent or human-in-the-loop workflows are actually needed.
 
 **PRD Source:** `/Users/mohidbutt/Documents/Claudius/Second Brain/Projects/Episteme/Inhale_PRD_ERD.md`
 
@@ -18,16 +20,16 @@
 
 | Phase | Status | Notes |
 |---|---|---|
-| **0.0 — Infrastructure & Database** | DONE | Postgres+Redis Docker, Drizzle schema (users, documents, user_api_keys), migration generated |
-| **0.1 — Authentication** | NEXT | — |
-| 0.2 — Document Upload & Library | Pending | — |
-| 0.3 — PDF Reader (Core Rendering) | Pending | — |
-| 0.4 — Highlighting | Pending | — |
-| 0.5 — Comments & BYOK Settings | Pending | — |
-| 1.0 — FastAPI Service Bootstrap | Pending | — |
-| 1.1 — Celery Pipeline & Processing | Pending | — |
-| 1.2 — AI Outline & Section Preview | Pending | — |
-| 1.3 — Basic RAG Q&A + Viewport Awareness | Pending | — |
+| **0.0 — Infrastructure & Database** | DONE | Postgres Docker, Drizzle schema (users, documents, user_api_keys), migration applied |
+| **0.1 — Authentication** | DONE | Better Auth + Drizzle adapter, login/signup pages, middleware |
+| **0.2 — Document Upload & Library** | DONE | Upload route, library grid, delete |
+| **0.3 — PDF Reader (Core Rendering)** | DONE | next/dynamic SSR fix, Prev/Next scroll, manual-scroll no-feedback fix, real-paper benchmark passing (18/18 e2e) |
+| **0.4 — Highlighting** | DONE | Schema, CRUD, color picker toolbar, sidebar, AbortController + DOMRect serialization fixes |
+| **0.5 — Comments & BYOK Settings** | DONE | Encrypted user_api_keys storage, settings UI |
+| **1.0 — BYOK OpenRouter (server-side)** | NEXT | Replaces old "FastAPI Service Bootstrap" |
+| 1.1 — Chunking + pgvector | Pending | Replaces old "Celery Pipeline" — inline on upload |
+| 1.2 — AI Outline via Next.js route | Pending | Replaces old "AI Outline" — pure server route |
+| 1.3 — Minimal RAG Chat | Pending | Replaces old "Basic RAG + Viewport" — Next.js route + SSE |
 | 2.0–2.3 | Pending | — |
 | 3.0–3.3 | Pending | — |
 | 4.0–4.4 | Pending | — |
@@ -38,43 +40,51 @@
 
 | Decision | Choice | Why |
 |---|---|---|
-| Backend split | Next.js API routes (CRUD/auth) + FastAPI (OCR, RAG, embeddings) | Avoids dual-stack overhead for simple ops; keeps Python where its ecosystem is superior |
+| Backend | Pure Next.js 16 route handlers + server actions | One language, one runtime, one deploy target. No dual-stack tax. |
 | Auth | Better Auth (self-hosted TS lib) | Email+password built-in, OAuth plugin later, stores in your Postgres, no vendor lock-in |
-| ORM (JS) | Drizzle ORM | Lightweight, SQL-like, excellent TS inference, schema-as-code |
-| ORM (Python) | SQLAlchemy 2.0 (async, read-only reflection) | Mature, pgvector extension, same DB. Drizzle owns all migrations. |
+| ORM | Drizzle ORM | Lightweight, SQL-like, excellent TS inference, schema-as-code |
 | Streaming | SSE for text agent + all AI features; WebSocket only for voice | SSE simpler, works through Vercel/Cloudflare, auto-reconnects |
-| PDF rendering | react-pdf v9 (wraps PDF.js) | React 19 support, canvas + text layer |
+| PDF rendering | react-pdf v9 (wraps PDF.js), loaded via `next/dynamic` to bypass SSR | React 19 support, canvas + text layer |
 | Reader state | Zustand | Minimal boilerplate for page/zoom/scroll state |
-| Vector DB | PGVector (Postgres extension) | No separate service, lives in existing Postgres |
-| Task queue | Celery + Redis | Standard Python background processing |
-| LLM | OpenRouter (BYOK) | User provides key, multi-model access |
-| OCR | Mistral OCR API (BYOK) | Best-in-class for scientific PDFs |
+| Vector DB | pgvector (Postgres extension) | No separate service, lives in existing Postgres |
+| Background work | Inline in upload route handler (v0); revisit if jobs >5s become common | Avoid Celery/Redis/queue complexity until measured demand exists |
+| LLM | OpenRouter via `@openrouter/sdk` (BYOK) | User provides key, multi-model access, native TS, `callModel` + tools + streaming |
+| Embeddings | OpenRouter OpenAI-compatible REST endpoint via `fetch` | SDK does not currently expose embeddings; use `POST https://openrouter.ai/api/v1/embeddings` with `openai/text-embedding-3-small` |
+| Agent framework | None (raw `callModel` + `tool()`) | LangChain TS not justified for v0; revisit if multi-agent or HITL is needed |
+| OCR | Mistral OCR API (BYOK), called via `fetch` from Next.js route | Best-in-class for scientific PDFs |
 | Citations | Semantic Scholar API (free) | Comprehensive, good rate limits |
 | Encryption | Node.js crypto AES-256-GCM | Built-in, zero dependencies |
-| Repo structure | Monorepo: `src/` (Next.js) + `services/processing/` (FastAPI) | Simple, shared DB, one git history |
+| Repo structure | Single Next.js project under `src/` | No separate services directory |
 
 ---
 
 ## Dependency Graph
 
 ```
-0.0 (Infra) ✅ → 0.1 (Auth) → 0.2 (Upload) → 0.3 (Reader) → 0.4 (Highlights) → 0.5 (Comments/BYOK)
-                                                    |
-                                                    v
-                                              1.0 (FastAPI) → 1.1 (Pipeline) → 1.2 (Outline) + 1.3 (RAG)
-                                                                                    |
-                                                                        2.0–2.3 (independent of each other)
-                                                                                    |
-                                                                        3.0–3.3 (independent of each other)
-                                                                                    |
-                                                                        4.0–4.4 (can interleave after Phase 1)
+0.0 (Infra) ✅ → 0.1 (Auth) ✅ → 0.2 (Upload) ✅ → 0.3 (Reader) ✅ → 0.4 (Highlights) ✅ → 0.5 (Comments/BYOK) ✅
+                                                                                                  |
+                                                                                                  v
+                                                                                          1.0 (BYOK OpenRouter)
+                                                                                                  |
+                                                                                                  v
+                                                                                          1.1 (Chunking + pgvector)
+                                                                                                  |
+                                                                                          ┌───────┴───────┐
+                                                                                          v               v
+                                                                                  1.2 (AI Outline)   1.3 (RAG Chat)
+                                                                                                  |
+                                                                                  2.0–2.3 (independent of each other)
+                                                                                                  |
+                                                                                  3.0–3.3 (independent of each other)
+                                                                                                  |
+                                                                                  4.0–4.4 (can interleave after Phase 1)
 ```
 
 ---
 
 ## Existing Files (Phase 0.0 — already built)
 
-- `docker-compose.yml` — Postgres 16 (pgvector) + Redis 7
+- `docker-compose.yml` — Postgres 16 (pgvector)
 - `drizzle.config.ts` — schema at `src/db/schema/index.ts`, output `drizzle/`
 - `src/db/index.ts` — postgres.js connection singleton
 - `src/db/schema/users.ts` — users table (serial PK, email unique, password_hash, display_name, avatar_url, timestamps)
@@ -149,52 +159,42 @@ src/
     └── user-comments.ts             # Added in 0.5
 ```
 
-### Phase 1: First AI Features
+### Phase 1: First AI Features (pure Next.js)
 
 ```
-services/processing/
-├── app/
-│   ├── main.py                      # FastAPI app + CORS + health
-│   ├── config.py                    # Settings from env
-│   ├── celery_app.py                # Celery config
-│   ├── models/                      # SQLAlchemy mirrors (read-only)
-│   │   ├── __init__.py
-│   │   └── base.py                  # Async engine + session factory
-│   ├── routers/
-│   │   ├── health.py                # GET /health
-│   │   ├── processing.py            # POST /process/{doc_id}
-│   │   └── rag.py                   # POST /rag/query (SSE)
-│   ├── tasks/
-│   │   ├── process_document.py      # OCR → section split → chunk
-│   │   ├── generate_embeddings.py   # Embed chunks → pgvector
-│   │   └── generate_outline.py      # LLM outline generation
-│   └── services/
-│       ├── chunking.py              # Text → overlapping chunks
-│       ├── embeddings.py            # OpenRouter embeddings client
-│       ├── llm.py                   # OpenRouter chat client
-│       └── rag.py                   # Vector search + rerank + answer
-├── requirements.txt
-├── Dockerfile
-└── pyproject.toml
-
 src/
+├── lib/
+│   └── ai/
+│       ├── openrouter.ts            # Get decrypted key from user_api_keys → returns initialized OpenRouter SDK client
+│       ├── embeddings.ts            # fetch wrapper for OpenRouter /embeddings (text-embedding-3-small)
+│       ├── chunking.ts              # ~500-token chunks, ~50-token overlap (no langchain)
+│       └── pdf-text.ts              # Extract text from a stored PDF (pdf-parse / unpdf — pure JS)
 ├── db/schema/
-│   ├── document-sections.ts         # Added in 1.1
-│   ├── document-chunks.ts           # Added in 1.1
-│   └── processing-jobs.ts           # Added in 1.1
+│   ├── document-sections.ts         # already exists (used by outline)
+│   ├── document-chunks.ts           # already exists; add `embedding vector(1536)` column in 1.1
+│   ├── document-outlines.ts         # already exists
+│   ├── agent-conversations.ts      # already exists
+│   └── agent-messages.ts            # already exists
+├── app/api/
+│   └── documents/
+│       └── [id]/
+│           ├── outline/route.ts     # GET → run LLM, persist to document_sections (Task 16)
+│           └── chat/route.ts        # POST → embed q → pgvector top-K → callModel + getTextStream → SSE (Task 17)
 ├── components/
 │   ├── library/
-│   │   └── processing-badge.tsx     # Status indicator on cards
+│   │   └── processing-badge.tsx     # Status indicator on cards (kept as inline-flag)
 │   └── reader/
-│       ├── outline-sidebar.tsx      # AI-generated doc outline
+│       ├── outline-sidebar.tsx      # already exists; rewire to /api/documents/[id]/outline
 │       ├── section-preview.tsx      # Hover preview popover
-│       ├── concepts-panel.tsx       # Selected text explanation
-│       ├── chat-panel.tsx           # RAG Q&A sidebar
-│       └── chat-message.tsx         # Single chat message
+│       ├── concepts-panel.tsx       # Selected text explanation (already exists; rewire)
+│       ├── chat-panel.tsx           # already exists; remove `apiKey` prop, hit /api/documents/[id]/chat
+│       └── chat-message.tsx         # already exists
 └── hooks/
-    ├── use-chat.ts                  # SSE chat hook
-    └── use-viewport-tracking.ts     # Debounced scroll → visible sections
+    ├── use-chat.ts                  # already exists; point at /api/documents/${id}/chat, drop api_key from body
+    └── use-viewport-tracking.ts     # already exists; pass {page} into chat POST body
 ```
+
+> **Removed:** the entire `services/processing/` Python tree from the previous plan. A separate execution step (Task 14) calls for deleting that directory if it has been created on disk.
 
 ---
 
@@ -202,13 +202,15 @@ src/
 
 ## Phase 0.0 — Infrastructure & Database [DONE]
 
-Already complete. Docker Compose (Postgres 16 + pgvector, Redis 7), Drizzle ORM setup, initial schema (users, documents, user_api_keys), migration generated.
+Already complete. Docker Compose (Postgres 16 + pgvector), Drizzle ORM setup, initial schema (users, documents, user_api_keys), migration applied.
 
-**Prerequisite for all subsequent tasks:** Run `docker compose up -d` and `npx drizzle-kit push` to create tables.
+**Prerequisite for all subsequent tasks:** Run `docker compose up -d` and `npx drizzle-kit push` to create tables. Redis is no longer required.
 
 ---
 
-## Phase 0.1 — Authentication
+## Phase 0.1 — Authentication [DONE]
+
+> Tasks 1–3 below are kept for historical reference. All steps were completed and verified.
 
 ### Task 1: Better Auth Server Setup
 
@@ -610,7 +612,7 @@ git commit -m "feat(auth): add login, signup pages and user menu"
 
 ---
 
-## Phase 0.2 — Document Upload & Library
+## Phase 0.2 — Document Upload & Library [DONE]
 
 ### Task 4: Storage Abstraction & Upload API
 
@@ -1000,7 +1002,16 @@ git commit -m "feat(library): add document library page with upload and grid"
 
 ---
 
-## Phase 0.3 — PDF Reader (Core Rendering)
+## Phase 0.3 — PDF Reader (Core Rendering) [DONE]
+
+> **Verified today (2026-04-09):** 18/18 e2e tests passing including the real-paper benchmark. Today's fixes:
+> - SSR fix — `react-pdf` is now imported via `next/dynamic({ ssr: false })` from `pdf-viewer.tsx`
+> - Prev/Next scroll — toolbar buttons in `reader-toolbar.tsx` now scroll the viewer to the target page instead of only updating state
+> - Manual-scroll no-feedback fix — `use-reader-state.ts` no longer fights the user's own scroll updates
+> - Real-paper benchmark — `e2e/reader.spec.ts` exercises an actual scientific paper end to end
+> - `loading.tsx` for the reader route was added earlier in the day
+>
+> Tasks 6–7 below are kept for historical reference and represent the final shipped state.
 
 ### Task 6: PDF.js Setup & Reader State
 
@@ -1367,7 +1378,7 @@ git commit -m "feat(reader): add PDF viewer with zoom, page navigation, and text
 
 ---
 
-## Phase 0.4 — Highlighting
+## Phase 0.4 — Highlighting [DONE]
 
 ### Task 8: Highlights Schema & API
 
@@ -1720,7 +1731,7 @@ git commit -m "feat(highlights): add text selection, color picker toolbar, and h
 
 ---
 
-## Phase 0.5 — Comments & BYOK Settings
+## Phase 0.5 — Comments & BYOK Settings [DONE]
 
 ### Task 10: Comments Schema & API
 
@@ -2311,1315 +2322,758 @@ git commit -m "feat(byok): add API key management with encrypted storage"
 
 ---
 
-# Phase 1: First AI Features
+# Phase 1: First AI Features (pure Next.js)
 
-## Phase 1.0 — FastAPI Service Bootstrap
+> This phase replaces the old "FastAPI Service Bootstrap / Celery Pipeline / RAG via FastAPI" path entirely. Everything runs in Next.js route handlers using the `@openrouter/sdk` TS package and `pgvector` in the existing Postgres. No Python service, no separate worker, no message queue.
 
-### Task 14: FastAPI Project Structure
+## Phase 1.0 — BYOK OpenRouter (server-side)
 
-**Files:**
-- Create: `services/processing/app/main.py`
-- Create: `services/processing/app/config.py`
-- Create: `services/processing/app/models/__init__.py`
-- Create: `services/processing/app/models/base.py`
-- Create: `services/processing/app/routers/__init__.py`
-- Create: `services/processing/app/routers/health.py`
-- Create: `services/processing/requirements.txt`
-- Create: `services/processing/Dockerfile`
-- Modify: `docker-compose.yml` (add processing service)
-
-- [ ] **Step 1: Create requirements.txt**
-
-```
-fastapi==0.115.0
-uvicorn[standard]==0.32.0
-sqlalchemy[asyncio]==2.0.36
-asyncpg==0.30.0
-httpx==0.28.0
-celery[redis]==5.4.0
-redis==5.2.0
-pydantic-settings==2.6.0
-```
-
-- [ ] **Step 2: Create config**
-
-```python
-# services/processing/app/config.py
-from pydantic_settings import BaseSettings
-
-class Settings(BaseSettings):
-    database_url: str = "postgresql+asyncpg://inhale:inhale_dev@localhost:5432/inhale"
-    redis_url: str = "redis://localhost:6379"
-    cors_origins: list[str] = ["http://localhost:3000"]
-
-    class Config:
-        env_file = ".env.local"
-
-settings = Settings()
-```
-
-- [ ] **Step 3: Create SQLAlchemy async engine (read-only reflection)**
-
-```python
-# services/processing/app/models/__init__.py
-# Empty — models are imported individually
-
-# services/processing/app/models/base.py
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from app.config import settings
-
-engine = create_async_engine(settings.database_url, echo=False)
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-async def get_db() -> AsyncSession:
-    async with async_session() as session:
-        yield session
-```
-
-> **Convention:** SQLAlchemy models in this service are read-only reflections of Drizzle schema. They never create or alter tables. All migrations go through `drizzle-kit`.
-
-- [ ] **Step 4: Create FastAPI app with health check**
-
-```python
-# services/processing/app/routers/health.py
-from fastapi import APIRouter
-
-router = APIRouter()
-
-@router.get("/health")
-async def health():
-    return {"status": "ok", "service": "inhale-processing"}
-```
-
-```python
-# services/processing/app/main.py
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.config import settings
-from app.routers import health
-
-app = FastAPI(title="Inhale Processing Service")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(health.router)
-```
-
-- [ ] **Step 5: Create Dockerfile**
-
-```dockerfile
-# services/processing/Dockerfile
-FROM python:3.13-slim
-
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-- [ ] **Step 6: Add processing service to docker-compose.yml**
-
-Add to `docker-compose.yml`:
-
-```yaml
-  processing:
-    build: ./services/processing
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://inhale:inhale_dev@postgres:5432/inhale
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - postgres
-      - redis
-    volumes:
-      - ./services/processing:/app
-      - ./uploads:/uploads
-```
-
-- [ ] **Step 7: Test**
-
-```bash
-docker compose up -d
-curl http://localhost:8000/health
-```
-
-Expected: `{"status":"ok","service":"inhale-processing"}`
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add services/processing/ docker-compose.yml
-git commit -m "feat(processing): bootstrap FastAPI service with health check and Docker"
-```
-
----
-
-## Phase 1.1 — Celery Pipeline & Processing
-
-### Task 15: Processing Schema & Celery Setup
+### Task 14: OpenRouter SDK helper + delete legacy Python tree
 
 **Files:**
-- Create: `src/db/schema/document-sections.ts`
-- Create: `src/db/schema/document-chunks.ts`
-- Create: `src/db/schema/processing-jobs.ts`
-- Modify: `src/db/schema/index.ts`
-- Create: `services/processing/app/celery_app.py`
-- Create: `services/processing/app/tasks/process_document.py`
-- Create: `services/processing/app/services/chunking.py`
-- Create: `services/processing/app/services/embeddings.py`
-- Create: `services/processing/app/routers/processing.py`
-- Create: `src/components/library/processing-badge.tsx`
+- Create: `src/lib/ai/openrouter.ts`
+- Modify: `package.json` (add `@openrouter/sdk`)
+- Delete: `services/processing/` (entire directory if it exists from earlier scaffolding)
+- Modify: `docker-compose.yml` (remove any `processing` / `celery-worker` / `redis` services that may have been added)
 
-- [ ] **Step 1: Create Drizzle schemas for sections, chunks, processing jobs**
-
-```typescript
-// src/db/schema/document-sections.ts
-import { pgTable, text, timestamp, serial, integer } from "drizzle-orm/pg-core";
-import { documents } from "./documents";
-
-export const documentSections = pgTable("document_sections", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id")
-    .notNull()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  level: integer("level").notNull().default(1),
-  pageStart: integer("page_start").notNull(),
-  pageEnd: integer("page_end"),
-  yPosition: integer("y_position"),
-  contentPreview: text("content_preview"),
-  orderIndex: integer("order_index").notNull(),
-  parentSectionId: integer("parent_section_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-```
-
-```typescript
-// src/db/schema/document-chunks.ts
-import { pgTable, text, timestamp, serial, integer, vector } from "drizzle-orm/pg-core";
-import { documents } from "./documents";
-import { documentSections } from "./document-sections";
-
-export const documentChunks = pgTable("document_chunks", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id")
-    .notNull()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  sectionId: integer("section_id")
-    .references(() => documentSections.id, { onDelete: "set null" }),
-  chunkIndex: integer("chunk_index").notNull(),
-  content: text("content").notNull(),
-  pageStart: integer("page_start").notNull(),
-  pageEnd: integer("page_end"),
-  tokenCount: integer("token_count"),
-  embedding: vector("embedding", { dimensions: 1536 }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-```
-
-> **Note:** The `vector` column type requires `drizzle-orm/pg-core` pgvector support. Check Drizzle docs — you may need `import { vector } from "drizzle-orm/pg-core"` or a custom column type. If not natively supported, use `text` and cast in queries.
-
-```typescript
-// src/db/schema/processing-jobs.ts
-import { pgTable, text, timestamp, serial, integer, pgEnum } from "drizzle-orm/pg-core";
-import { documents } from "./documents";
-
-export const jobTypeEnum = pgEnum("job_type", [
-  "extract_text",
-  "extract_refs",
-  "fetch_metadata",
-  "detect_figures",
-  "extract_formulas",
-  "generate_outline",
-  "auto_highlight",
-  "build_rag_index",
-  "extract_links",
-]);
-
-export const jobStatusEnum = pgEnum("job_status", ["queued", "running", "done", "failed"]);
-
-export const processingJobs = pgTable("processing_jobs", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id")
-    .notNull()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  jobType: jobTypeEnum("job_type").notNull(),
-  status: jobStatusEnum("status").notNull().default("queued"),
-  progressPct: integer("progress_pct").default(0),
-  errorMessage: text("error_message"),
-  startedAt: timestamp("started_at", { withTimezone: true }),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-  durationMs: integer("duration_ms"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-```
-
-- [ ] **Step 2: Export all new schemas, push**
-
-Update `src/db/schema/index.ts` with new exports. Run `npx drizzle-kit push`.
-
-- [ ] **Step 3: Create Celery app config**
-
-```python
-# services/processing/app/celery_app.py
-from celery import Celery
-from app.config import settings
-
-celery_app = Celery(
-    "inhale",
-    broker=settings.redis_url,
-    backend=settings.redis_url,
-)
-
-celery_app.conf.update(
-    task_serializer="json",
-    accept_content=["json"],
-    result_serializer="json",
-    timezone="UTC",
-    task_track_started=True,
-)
-
-# Auto-discover tasks
-celery_app.autodiscover_tasks(["app.tasks"])
-```
-
-- [ ] **Step 4: Create text chunking service**
-
-```python
-# services/processing/app/services/chunking.py
-from typing import List
-
-def chunk_text(text: str, chunk_size: int = 512, overlap: int = 64) -> List[dict]:
-    """Split text into overlapping chunks for RAG indexing."""
-    words = text.split()
-    chunks = []
-    start = 0
-    idx = 0
-
-    while start < len(words):
-        end = min(start + chunk_size, len(words))
-        chunk_text = " ".join(words[start:end])
-        chunks.append({
-            "index": idx,
-            "content": chunk_text,
-            "token_count": end - start,
-        })
-        start += chunk_size - overlap
-        idx += 1
-
-    return chunks
-```
-
-- [ ] **Step 5: Create document processing task**
-
-```python
-# services/processing/app/tasks/process_document.py
-from app.celery_app import celery_app
-from app.models.base import async_session
-from sqlalchemy import text
-import asyncio
-
-def run_async(coro):
-    """Run async function from sync Celery task."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-@celery_app.task(bind=True)
-def process_document(self, document_id: int):
-    """Main processing pipeline: extract text → chunk → embed."""
-    run_async(_process_document(document_id))
-
-async def _process_document(document_id: int):
-    async with async_session() as session:
-        # Update status to processing
-        await session.execute(
-            text("UPDATE documents SET processing_status = 'processing' WHERE id = :id"),
-            {"id": document_id},
-        )
-        await session.commit()
-
-        # Get document file path
-        result = await session.execute(
-            text("SELECT file_path FROM documents WHERE id = :id"),
-            {"id": document_id},
-        )
-        row = result.fetchone()
-        if not row:
-            return
-
-        # TODO: Extract text from PDF using pdfplumber or pymupdf
-        # TODO: Split into sections
-        # TODO: Chunk text
-        # TODO: Generate embeddings via OpenRouter
-        # For now, mark as ready
-        await session.execute(
-            text("UPDATE documents SET processing_status = 'ready' WHERE id = :id"),
-            {"id": document_id},
-        )
-        await session.commit()
-```
-
-- [ ] **Step 6: Create processing router**
-
-```python
-# services/processing/app/routers/processing.py
-from fastapi import APIRouter, BackgroundTasks
-from app.tasks.process_document import process_document
-
-router = APIRouter(prefix="/processing")
-
-@router.post("/{document_id}")
-async def trigger_processing(document_id: int):
-    task = process_document.delay(document_id)
-    return {"task_id": task.id, "status": "queued"}
-```
-
-- [ ] **Step 7: Register router in main.py**
-
-Add `from app.routers import processing` and `app.include_router(processing.router)` to `main.py`.
-
-- [ ] **Step 8: Create processing badge component**
-
-```tsx
-// src/components/library/processing-badge.tsx
-const STATUS_MAP: Record<string, { label: string; class: string }> = {
-  pending: { label: "Pending", class: "bg-muted text-muted-foreground" },
-  processing: { label: "Processing...", class: "bg-yellow-100 text-yellow-800" },
-  ready: { label: "Ready", class: "bg-green-100 text-green-800" },
-  failed: { label: "Failed", class: "bg-red-100 text-red-800" },
-};
-
-export function ProcessingBadge({ status }: { status: string }) {
-  const config = STATUS_MAP[status] ?? STATUS_MAP.pending;
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${config.class}`}>
-      {config.label}
-    </span>
-  );
-}
-```
-
-- [ ] **Step 9: Add Celery worker to docker-compose.yml**
-
-```yaml
-  celery-worker:
-    build: ./services/processing
-    command: celery -A app.celery_app worker --loglevel=info
-    environment:
-      DATABASE_URL: postgresql+asyncpg://inhale:inhale_dev@postgres:5432/inhale
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - postgres
-      - redis
-    volumes:
-      - ./services/processing:/app
-      - ./uploads:/uploads
-```
-
-- [ ] **Step 10: Test**
+- [ ] **Step 1: Install the OpenRouter TS SDK**
 
 ```bash
-docker compose up -d
-# Trigger processing for a document
-curl -X POST http://localhost:8000/processing/1
+npm install @openrouter/sdk
 ```
 
-Expected: `{"task_id":"...","status":"queued"}`
+> Read the package's published README before writing the helper. APIs from training data are not authoritative. The shapes used below (`callModel`, `getTextStream`, `tool()`, `stepCountIs`, `stopWhen`) are the ones we plan against — verify them against the installed version and adjust this helper if names changed.
 
-- [ ] **Step 11: Commit**
-
-```bash
-git add src/db/schema/ services/processing/ src/components/library/processing-badge.tsx docker-compose.yml
-git commit -m "feat(pipeline): add Celery processing pipeline with chunking and processing jobs schema"
-```
-
----
-
-## Phase 1.2 — AI Outline & Section Preview
-
-### Task 16: LLM Service & Outline Generation
-
-**Files:**
-- Create: `services/processing/app/services/llm.py`
-- Create: `services/processing/app/tasks/generate_outline.py`
-- Create: `src/components/reader/outline-sidebar.tsx`
-- Create: `src/components/reader/section-preview.tsx`
-- Create: `src/components/reader/concepts-panel.tsx`
-
-- [ ] **Step 1: Create OpenRouter LLM client**
-
-```python
-# services/processing/app/services/llm.py
-import httpx
-from typing import AsyncGenerator
-
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-
-async def chat_completion(
-    api_key: str,
-    messages: list[dict],
-    model: str = "anthropic/claude-sonnet-4-20250514",
-    stream: bool = False,
-) -> str | AsyncGenerator[str, None]:
-    """Call OpenRouter chat completion. Returns full text or async generator of tokens."""
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": model,
-        "messages": messages,
-        "stream": stream,
-    }
-
-    if not stream:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{OPENROUTER_BASE}/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=60,
-            )
-            resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
-
-    async def token_stream():
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                f"{OPENROUTER_BASE}/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=120,
-            ) as resp:
-                async for line in resp.aiter_lines():
-                    if line.startswith("data: ") and line != "data: [DONE]":
-                        import json
-                        chunk = json.loads(line[6:])
-                        delta = chunk["choices"][0].get("delta", {})
-                        if "content" in delta:
-                            yield delta["content"]
-
-    return token_stream()
-```
-
-- [ ] **Step 2: Create outline generation task**
-
-```python
-# services/processing/app/tasks/generate_outline.py
-from app.celery_app import celery_app
-from app.models.base import async_session
-from app.services.llm import chat_completion
-from sqlalchemy import text
-import asyncio
-import json
-
-def run_async(coro):
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-@celery_app.task(bind=True)
-def generate_outline(self, document_id: int, api_key: str):
-    run_async(_generate_outline(document_id, api_key))
-
-async def _generate_outline(document_id: int, api_key: str):
-    async with async_session() as session:
-        # Get document chunks for context
-        result = await session.execute(
-            text("SELECT content FROM document_chunks WHERE document_id = :id ORDER BY chunk_index LIMIT 20"),
-            {"id": document_id},
-        )
-        chunks = [row[0] for row in result.fetchall()]
-
-        if not chunks:
-            return
-
-        doc_text = "\n\n".join(chunks[:10])  # Use first ~10 chunks for outline
-
-        messages = [
-            {
-                "role": "system",
-                "content": "You are a research paper analyzer. Generate a structured outline of this paper as JSON. Format: [{\"title\": \"Section Title\", \"level\": 1, \"page\": 1, \"children\": [...]}]. Use levels 1-3.",
-            },
-            {
-                "role": "user",
-                "content": f"Generate an outline for this paper:\n\n{doc_text}",
-            },
-        ]
-
-        response = await chat_completion(api_key, messages)
-
-        # Store outline
-        await session.execute(
-            text("""
-                INSERT INTO document_outlines (document_id, outline_json, generated_by, created_at)
-                VALUES (:doc_id, :outline, :model, NOW())
-                ON CONFLICT (document_id) DO UPDATE SET outline_json = :outline
-            """),
-            {"doc_id": document_id, "outline": response, "model": "anthropic/claude-sonnet-4-20250514"},
-        )
-        await session.commit()
-```
-
-> **Note:** This task needs a `document_outlines` table. Add it to Drizzle schema:
+- [ ] **Step 2: Create the per-user OpenRouter client factory**
 
 ```typescript
-// src/db/schema/document-outlines.ts
-import { pgTable, text, timestamp, serial, integer, jsonb } from "drizzle-orm/pg-core";
-import { documents } from "./documents";
+// src/lib/ai/openrouter.ts
+import OpenRouter from "@openrouter/sdk";
+import { db } from "@/db";
+import { userApiKeys } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { decrypt } from "@/lib/encryption";
 
-export const documentOutlines = pgTable("document_outlines", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id")
-    .notNull()
-    .references(() => documents.id, { onDelete: "cascade" })
-    .unique(),
-  outlineJson: jsonb("outline_json").notNull(),
-  generatedBy: text("generated_by"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-```
+/**
+ * Load the user's stored OpenRouter (provider_type = 'llm') key,
+ * decrypt it, and return an initialized client.
+ *
+ * Throws if the user has not stored an LLM key yet — callers should
+ * surface a "Add an OpenRouter key in Settings" message.
+ */
+export async function getOpenRouterClient(userId: number): Promise<OpenRouter> {
+  const [row] = await db
+    .select({ encryptedKey: userApiKeys.encryptedKey })
+    .from(userApiKeys)
+    .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.providerType, "llm")));
 
-- [ ] **Step 3: Create outline sidebar component**
-
-```tsx
-// src/components/reader/outline-sidebar.tsx
-"use client";
-
-import { useEffect, useState } from "react";
-
-interface OutlineItem {
-  title: string;
-  level: number;
-  page: number;
-  children?: OutlineItem[];
-}
-
-interface OutlineSidebarProps {
-  documentId: number;
-  open: boolean;
-  onNavigate: (page: number) => void;
-}
-
-export function OutlineSidebar({ documentId, open, onNavigate }: OutlineSidebarProps) {
-  const [outline, setOutline] = useState<OutlineItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!open) return;
-    setLoading(true);
-    fetch(`/api/documents/${documentId}/outline`)
-      .then((r) => r.json())
-      .then((data) => {
-        setOutline(data.outline ?? []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [documentId, open]);
-
-  if (!open) return null;
-
-  function renderItems(items: OutlineItem[], depth = 0) {
-    return items.map((item, i) => (
-      <div key={i}>
-        <button
-          onClick={() => onNavigate(item.page)}
-          className="w-full text-left text-sm py-1 hover:text-primary transition-colors"
-          style={{ paddingLeft: `${depth * 16 + 8}px` }}
-        >
-          {item.title}
-          <span className="ml-2 text-xs text-muted-foreground">p.{item.page}</span>
-        </button>
-        {item.children && renderItems(item.children, depth + 1)}
-      </div>
-    ));
+  if (!row) {
+    throw new Error("NO_LLM_KEY");
   }
 
-  return (
-    <div className="w-64 border-r bg-background overflow-auto p-4">
-      <h2 className="mb-4 text-sm font-semibold">Outline</h2>
-      {loading ? (
-        <p className="text-xs text-muted-foreground">Loading outline...</p>
-      ) : outline.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No outline available. Process document with an LLM key to generate one.</p>
-      ) : (
-        renderItems(outline)
-      )}
-    </div>
-  );
+  const apiKey = decrypt(row.encryptedKey);
+  return new OpenRouter({ apiKey });
+}
+
+/** Default models used across the app. Centralized so we can swap easily. */
+export const MODELS = {
+  chat: "openai/gpt-4o-mini",
+  outline: "openai/gpt-4o-mini",
+  embedding: "openai/text-embedding-3-small",
+} as const;
+```
+
+- [ ] **Step 3: Delete the legacy `services/processing/` directory**
+
+If a previous run of the old plan created `services/processing/` (FastAPI + Celery), remove it now. There is no Python backend in this architecture.
+
+```bash
+rm -rf services/processing
+# If any 'processing', 'celery-worker', or 'redis' service blocks were added
+# to docker-compose.yml, remove those blocks too. Postgres (pgvector) is the
+# only docker service we need.
+```
+
+- [ ] **Step 4: Verification — one live ping**
+
+Add a temporary route or a `tsx` script that calls `getOpenRouterClient(userId)` and runs:
+
+```ts
+const client = await getOpenRouterClient(userId);
+const result = client.callModel({
+  model: MODELS.chat,
+  input: [{ role: "user", content: "Reply with the word PONG only." }],
+});
+let out = "";
+for await (const delta of result.getTextStream()) out += delta;
+console.log(out); // expect: PONG
+```
+
+Acceptance: a single live call returns text. Delete the temporary script after verifying.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/lib/ai/openrouter.ts package.json package-lock.json docker-compose.yml
+# (and `git rm -r services/processing` if it existed)
+git commit -m "feat(ai): add OpenRouter SDK client factory; remove legacy Python service"
+```
+
+---
+
+## Phase 1.1 — Chunking + pgvector (inline on upload)
+
+### Task 15: Enable pgvector, add embedding column, chunk + embed inline
+
+**Files:**
+- Modify: `src/db/schema/document-chunks.ts` (add `embedding vector(1536)` column + ivfflat index)
+- Create: `drizzle/000X_enable_pgvector.sql` (manual migration to `CREATE EXTENSION IF NOT EXISTS vector`)
+- Create: `src/lib/ai/chunking.ts`
+- Create: `src/lib/ai/embeddings.ts`
+- Create: `src/lib/ai/pdf-text.ts`
+- Modify: `src/app/api/documents/upload/route.ts` (call extract → chunk → embed inline after the file is saved)
+
+> **Schemas already exist** from Phase 0: `documentChunks`, `documentSections`, `documentOutlines`, `agentConversations`, `agentMessages`. Phase 1 only adds the `embedding` column on `documentChunks` and an ivfflat index. Do not redefine those tables.
+
+- [ ] **Step 1: Enable the pgvector extension**
+
+Create `drizzle/000X_enable_pgvector.sql`:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+Apply via `npx drizzle-kit push` (or `psql` directly). The Postgres image in `docker-compose.yml` is already `pgvector/pgvector:pg16`, so the extension is available.
+
+- [ ] **Step 2: Add the `embedding` column to `documentChunks`**
+
+```typescript
+// src/db/schema/document-chunks.ts — add the column + index
+import { pgTable, text, timestamp, serial, integer, vector, index } from "drizzle-orm/pg-core";
+// ...
+
+export const documentChunks = pgTable(
+  "document_chunks",
+  {
+    // ...existing columns...
+    embedding: vector("embedding", { dimensions: 1536 }),
+  },
+  (t) => ({
+    embeddingIdx: index("document_chunks_embedding_idx")
+      .using("ivfflat", t.embedding.op("vector_cosine_ops"))
+      .with({ lists: 100 }),
+  })
+);
+```
+
+Run `npx drizzle-kit push`. Confirm the column and index exist in `psql`.
+
+- [ ] **Step 3: Create the PDF text extractor**
+
+```typescript
+// src/lib/ai/pdf-text.ts
+// Pure JS / no native deps. `unpdf` is a good fit (no canvas, ESM-friendly).
+import { extractText, getDocumentProxy } from "unpdf";
+import { getFile } from "@/lib/storage";
+
+export interface ExtractedPage {
+  pageNumber: number;
+  text: string;
+}
+
+export async function extractPdfPages(filePath: string): Promise<ExtractedPage[]> {
+  const buffer = await getFile(filePath);
+  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const { totalPages } = pdf;
+  const pages: ExtractedPage[] = [];
+  for (let i = 1; i <= totalPages; i++) {
+    const { text } = await extractText(pdf, { mergePages: false, pageNumbers: [i] });
+    pages.push({ pageNumber: i, text: Array.isArray(text) ? text.join("\n") : text });
+  }
+  return pages;
 }
 ```
 
-- [ ] **Step 4: Create section preview popover**
+> If `unpdf` is unavailable in the installed Next.js version, fall back to `pdf-parse`. Goal: a `(pageNumber, text)[]` array. No native bindings.
 
-```tsx
-// src/components/reader/section-preview.tsx
-"use client";
+- [ ] **Step 4: Create the chunker (no langchain)**
 
-import { useState } from "react";
+```typescript
+// src/lib/ai/chunking.ts
+import type { ExtractedPage } from "./pdf-text";
 
-interface SectionPreviewProps {
-  sectionTitle: string;
-  contentPreview: string;
-  page: number;
-  children: React.ReactNode;
+export interface DocumentChunk {
+  chunkIndex: number;
+  content: string;
+  pageStart: number;
+  pageEnd: number;
+  tokenCount: number;
 }
 
-export function SectionPreview({ sectionTitle, contentPreview, page, children }: SectionPreviewProps) {
-  const [show, setShow] = useState(false);
+// Cheap token estimator: ~4 chars per token. Good enough for chunk sizing.
+const APPROX_CHARS_PER_TOKEN = 4;
+const CHUNK_TOKENS = 500;
+const OVERLAP_TOKENS = 50;
 
-  return (
-    <span
-      className="relative inline"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      {children}
-      {show && (
-        <div className="absolute bottom-full left-0 z-50 mb-2 w-72 rounded-lg border bg-background p-3 shadow-lg">
-          <p className="text-xs font-medium">{sectionTitle}</p>
-          <p className="mt-1 text-xs text-muted-foreground line-clamp-4">{contentPreview}</p>
-          <p className="mt-1 text-[10px] text-muted-foreground">Page {page}</p>
-        </div>
-      )}
-    </span>
-  );
-}
-```
+export function chunkPages(pages: ExtractedPage[]): DocumentChunk[] {
+  // Build a flat stream of (char, page) so chunks know which pages they span.
+  const stream: { ch: string; page: number }[] = [];
+  for (const p of pages) {
+    for (const ch of p.text) stream.push({ ch, page: p.pageNumber });
+    stream.push({ ch: "\n", page: p.pageNumber });
+  }
 
-- [ ] **Step 5: Create concepts panel (explain selected text)**
+  const chunkChars = CHUNK_TOKENS * APPROX_CHARS_PER_TOKEN;
+  const overlapChars = OVERLAP_TOKENS * APPROX_CHARS_PER_TOKEN;
+  const step = chunkChars - overlapChars;
 
-```tsx
-// src/components/reader/concepts-panel.tsx
-"use client";
-
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-
-interface ConceptsPanelProps {
-  selectedText: string;
-  documentId: number;
-  onClose: () => void;
-}
-
-export function ConceptsPanel({ selectedText, documentId, onClose }: ConceptsPanelProps) {
-  const [explanation, setExplanation] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function explain() {
-    setLoading(true);
-    setExplanation("");
-
-    const res = await fetch("/api/ai/explain", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: selectedText, documentId }),
+  const chunks: DocumentChunk[] = [];
+  let idx = 0;
+  for (let start = 0; start < stream.length; start += step) {
+    const end = Math.min(start + chunkChars, stream.length);
+    const slice = stream.slice(start, end);
+    if (slice.length === 0) break;
+    const content = slice.map((s) => s.ch).join("").trim();
+    if (!content) continue;
+    chunks.push({
+      chunkIndex: idx++,
+      content,
+      pageStart: slice[0].page,
+      pageEnd: slice[slice.length - 1].page,
+      tokenCount: Math.ceil(slice.length / APPROX_CHARS_PER_TOKEN),
     });
-
-    if (!res.ok || !res.body) {
-      setExplanation("Failed to get explanation. Check your LLM API key in Settings.");
-      setLoading(false);
-      return;
-    }
-
-    // Read SSE stream
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      // Parse SSE lines
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
-          setExplanation((prev) => prev + line.slice(6));
-        }
-      }
-    }
-
-    setLoading(false);
+    if (end === stream.length) break;
   }
-
-  return (
-    <div className="w-80 rounded-lg border bg-background p-4 shadow-lg">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold">Explain</h3>
-        <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
-      </div>
-      <p className="text-xs italic text-muted-foreground mb-3 line-clamp-2">"{selectedText}"</p>
-      {!explanation && !loading && (
-        <Button size="sm" onClick={explain}>Explain this</Button>
-      )}
-      {loading && !explanation && (
-        <p className="text-xs text-muted-foreground">Thinking...</p>
-      )}
-      {explanation && (
-        <p className="text-sm leading-relaxed whitespace-pre-wrap">{explanation}</p>
-      )}
-    </div>
-  );
+  return chunks;
 }
 ```
 
-- [ ] **Step 6: Add API route for outline retrieval and explain SSE**
+- [ ] **Step 5: Create the embeddings helper**
 
-Create `src/app/api/documents/[id]/outline/route.ts` to GET the outline from DB.
-Create `src/app/api/ai/explain/route.ts` to proxy explain requests to FastAPI (or call OpenRouter directly with user's BYOK key).
+The OpenRouter TS SDK does not currently expose an embeddings method, so call OpenRouter's OpenAI-compatible REST endpoint via `fetch`. Use the user's already-decrypted key.
 
-- [ ] **Step 7: Test**
+```typescript
+// src/lib/ai/embeddings.ts
+import { db } from "@/db";
+import { userApiKeys } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { decrypt } from "@/lib/encryption";
+import { MODELS } from "./openrouter";
 
-1. Process a document (trigger via API)
-2. Open reader → outline sidebar shows
-3. Click outline items → navigates to page
-4. Select text → click Explain → streams explanation
+const EMBED_URL = "https://openrouter.ai/api/v1/embeddings";
+
+async function getDecryptedKey(userId: number): Promise<string> {
+  const [row] = await db
+    .select({ encryptedKey: userApiKeys.encryptedKey })
+    .from(userApiKeys)
+    .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.providerType, "llm")));
+  if (!row) throw new Error("NO_LLM_KEY");
+  return decrypt(row.encryptedKey);
+}
+
+export async function embedTexts(userId: number, inputs: string[]): Promise<number[][]> {
+  if (inputs.length === 0) return [];
+  const apiKey = await getDecryptedKey(userId);
+  const res = await fetch(EMBED_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model: MODELS.embedding, input: inputs }),
+  });
+  if (!res.ok) {
+    throw new Error(`OpenRouter embeddings failed: ${res.status} ${await res.text()}`);
+  }
+  const json = (await res.json()) as { data: { embedding: number[] }[] };
+  return json.data.map((d) => d.embedding);
+}
+
+export async function embedQuery(userId: number, query: string): Promise<number[]> {
+  const [vec] = await embedTexts(userId, [query]);
+  return vec;
+}
+```
+
+- [ ] **Step 6: Wire chunking + embedding into the upload route (inline, no queue)**
+
+After `saveFile` in `src/app/api/documents/upload/route.ts`:
+
+```typescript
+// after the documents row is inserted
+import { extractPdfPages } from "@/lib/ai/pdf-text";
+import { chunkPages } from "@/lib/ai/chunking";
+import { embedTexts } from "@/lib/ai/embeddings";
+import { documentChunks } from "@/db/schema";
+
+try {
+  await db.update(documents).set({ processingStatus: "processing" }).where(eq(documents.id, doc.id));
+
+  const pages = await extractPdfPages(doc.filePath);
+  const chunks = chunkPages(pages);
+
+  // Embed in batches of 64 to keep request bodies small.
+  const BATCH = 64;
+  const embeddings: number[][] = [];
+  for (let i = 0; i < chunks.length; i += BATCH) {
+    const batch = chunks.slice(i, i + BATCH).map((c) => c.content);
+    const vecs = await embedTexts(Number(session.user.id), batch);
+    embeddings.push(...vecs);
+  }
+
+  await db.insert(documentChunks).values(
+    chunks.map((c, i) => ({
+      documentId: doc.id,
+      chunkIndex: c.chunkIndex,
+      content: c.content,
+      pageStart: c.pageStart,
+      pageEnd: c.pageEnd,
+      tokenCount: c.tokenCount,
+      embedding: embeddings[i],
+    }))
+  );
+
+  await db
+    .update(documents)
+    .set({ processingStatus: "ready", pageCount: pages.length })
+    .where(eq(documents.id, doc.id));
+} catch (err) {
+  console.error("Inline processing failed", err);
+  await db
+    .update(documents)
+    .set({ processingStatus: "failed" })
+    .where(eq(documents.id, doc.id));
+  // Still return 201 — the file is uploaded. The UI can show "Processing failed; retry".
+}
+```
+
+> **Why inline:** for v0, embeddings on a typical 5–40 page paper finish in a few seconds. Avoid Celery / Redis / queues until measurement justifies them. If a single upload takes >5s consistently, revisit by moving processing into a Next.js Route Handler invoked from the client after upload (still no Python).
+
+- [ ] **Step 7: Verification**
+
+1. Upload a multi-page paper via the library UI.
+2. `psql`: `SELECT COUNT(*), MIN(chunk_index), MAX(chunk_index) FROM document_chunks WHERE document_id = <id>;` — non-zero, contiguous indices.
+3. `SELECT id, page_start, page_end, octet_length(embedding::text) FROM document_chunks WHERE document_id = <id> LIMIT 5;` — embeddings populated.
+4. Run a sanity cosine query in `psql` against a hard-coded embedding from `embedQuery` and confirm the top result is from a sensible page.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add services/processing/app/services/llm.py services/processing/app/tasks/generate_outline.py \
-  src/db/schema/document-outlines.ts src/db/schema/index.ts \
-  src/components/reader/outline-sidebar.tsx src/components/reader/section-preview.tsx \
-  src/components/reader/concepts-panel.tsx src/app/api/
-git commit -m "feat(ai): add AI outline generation, section preview, and concepts explanation"
+git add src/db/schema/document-chunks.ts drizzle/ \
+  src/lib/ai/openrouter.ts src/lib/ai/chunking.ts src/lib/ai/embeddings.ts src/lib/ai/pdf-text.ts \
+  src/app/api/documents/upload/route.ts
+git commit -m "feat(ai): add pgvector embeddings + inline chunking on upload"
 ```
 
 ---
 
-## Phase 1.3 — Basic RAG Q&A + Viewport Awareness
+## Phase 1.2 — AI Outline via Next.js route
 
-### Task 17: RAG Service & Chat
+### Task 16: Outline route + sidebar wiring
 
 **Files:**
-- Create: `services/processing/app/services/rag.py`
-- Create: `services/processing/app/routers/rag.py`
-- Create: `services/processing/app/tasks/generate_embeddings.py`
-- Create: `src/hooks/use-chat.ts`
-- Create: `src/hooks/use-viewport-tracking.ts`
-- Create: `src/components/reader/chat-panel.tsx`
-- Create: `src/components/reader/chat-message.tsx`
-- Add Drizzle schema: `src/db/schema/agent-conversations.ts`, `src/db/schema/agent-messages.ts`
+- Create: `src/app/api/documents/[id]/outline/route.ts`
+- Modify: `src/components/reader/outline-sidebar.tsx` (already exists; rewire to the new route)
+- Modify: `src/components/reader/section-preview.tsx` (already exists; consume `documentSections` row shape)
+- Modify: `src/components/reader/concepts-panel.tsx` (already exists; rewire `/api/ai/explain` to `src/app/api/ai/explain/route.ts` — pure Next.js, no FastAPI proxy)
 
-- [ ] **Step 1: Create conversation/message schemas**
+> The `documentSections` and `documentOutlines` tables already exist. The outline endpoint runs the LLM and persists rows into `documentSections` so the sidebar can reuse the same rows for navigation.
+
+- [ ] **Step 1: Create the outline route**
 
 ```typescript
-// src/db/schema/agent-conversations.ts
-import { pgTable, text, timestamp, serial, integer } from "drizzle-orm/pg-core";
-import { users } from "./users";
-import { documents } from "./documents";
+// src/app/api/documents/[id]/outline/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { db } from "@/db";
+import { documents, documentSections } from "@/db/schema";
+import { and, asc, eq } from "drizzle-orm";
+import { getOpenRouterClient, MODELS } from "@/lib/ai/openrouter";
+import { extractPdfPages } from "@/lib/ai/pdf-text";
 
-export const agentConversations = pgTable("agent_conversations", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  documentId: integer("document_id")
-    .notNull()
-    .references(() => documents.id, { onDelete: "cascade" }),
-  title: text("title"),
-  messageCount: integer("message_count").notNull().default(0),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-```
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-```typescript
-// src/db/schema/agent-messages.ts
-import { pgTable, text, timestamp, serial, integer, jsonb, pgEnum } from "drizzle-orm/pg-core";
-import { agentConversations } from "./agent-conversations";
+  const { id } = await params;
+  const documentId = Number(id);
+  const userId = Number(session.user.id);
 
-export const messageRoleEnum = pgEnum("message_role", ["user", "assistant"]);
-export const inputModeEnum = pgEnum("input_mode", ["text", "voice"]);
+  const [doc] = await db
+    .select()
+    .from(documents)
+    .where(and(eq(documents.id, documentId), eq(documents.userId, userId)));
+  if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-export const agentMessages = pgTable("agent_messages", {
-  id: serial("id").primaryKey(),
-  conversationId: integer("conversation_id")
-    .notNull()
-    .references(() => agentConversations.id, { onDelete: "cascade" }),
-  role: messageRoleEnum("role").notNull(),
-  content: text("content").notNull(),
-  inputMode: inputModeEnum("input_mode").notNull().default("text"),
-  viewportContext: jsonb("viewport_context"),
-  ragSources: jsonb("rag_sources"),
-  modelUsed: text("model_used"),
-  tokenCountIn: integer("token_count_in"),
-  tokenCountOut: integer("token_count_out"),
-  latencyMs: integer("latency_ms"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-```
+  // If sections already exist, return them.
+  const existing = await db
+    .select()
+    .from(documentSections)
+    .where(eq(documentSections.documentId, documentId))
+    .orderBy(asc(documentSections.orderIndex));
+  if (existing.length > 0) {
+    return NextResponse.json({ sections: existing });
+  }
 
-Export from index, push schema.
+  // Otherwise, generate.
+  let client;
+  try {
+    client = await getOpenRouterClient(userId);
+  } catch {
+    return NextResponse.json({ error: "Add an OpenRouter key in Settings" }, { status: 400 });
+  }
 
-- [ ] **Step 2: Create embeddings generation task**
+  const pages = await extractPdfPages(doc.filePath);
+  // Cap context: first ~30 pages of text is plenty for outline generation.
+  const sample = pages
+    .slice(0, 30)
+    .map((p) => `[Page ${p.pageNumber}]\n${p.text}`)
+    .join("\n\n");
 
-```python
-# services/processing/app/tasks/generate_embeddings.py
-from app.celery_app import celery_app
-from app.models.base import async_session
-from app.services.embeddings import generate_embedding
-from sqlalchemy import text
-import asyncio
-
-def run_async(coro):
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-@celery_app.task(bind=True)
-def generate_embeddings(self, document_id: int, api_key: str):
-    run_async(_generate_embeddings(document_id, api_key))
-
-async def _generate_embeddings(document_id: int, api_key: str):
-    async with async_session() as session:
-        result = await session.execute(
-            text("SELECT id, content FROM document_chunks WHERE document_id = :id AND embedding IS NULL"),
-            {"id": document_id},
-        )
-        chunks = result.fetchall()
-
-        for chunk_id, content in chunks:
-            embedding = await generate_embedding(api_key, content)
-            await session.execute(
-                text("UPDATE document_chunks SET embedding = :emb WHERE id = :id"),
-                {"emb": str(embedding), "id": chunk_id},
-            )
-
-        await session.commit()
-```
-
-```python
-# services/processing/app/services/embeddings.py
-import httpx
-
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-
-async def generate_embedding(api_key: str, text: str, model: str = "openai/text-embedding-3-small") -> list[float]:
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{OPENROUTER_BASE}/embeddings",
-            json={"model": model, "input": text},
-            headers=headers,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json()["data"][0]["embedding"]
-```
-
-- [ ] **Step 3: Create RAG service**
-
-```python
-# services/processing/app/services/rag.py
-from app.models.base import async_session
-from app.services.embeddings import generate_embedding
-from app.services.llm import chat_completion
-from sqlalchemy import text
-
-async def query_rag(
-    document_id: int,
-    question: str,
-    api_key: str,
-    viewport_context: dict | None = None,
-    history: list[dict] | None = None,
-    top_k: int = 5,
-):
-    """Retrieve relevant chunks and generate answer."""
-    # 1. Embed the question
-    q_embedding = await generate_embedding(api_key, question)
-
-    # 2. Vector similarity search
-    async with async_session() as session:
-        result = await session.execute(
-            text("""
-                SELECT content, page_start,
-                       1 - (embedding <=> :embedding::vector) as similarity
-                FROM document_chunks
-                WHERE document_id = :doc_id AND embedding IS NOT NULL
-                ORDER BY embedding <=> :embedding::vector
-                LIMIT :top_k
-            """),
-            {"embedding": str(q_embedding), "doc_id": document_id, "top_k": top_k},
-        )
-        chunks = result.fetchall()
-
-    # 3. Build context
-    context_parts = []
-    sources = []
-    for content, page, sim in chunks:
-        context_parts.append(f"[Page {page}]: {content}")
-        sources.append({"page": page, "relevance": float(sim)})
-
-    # Add viewport context
-    viewport_info = ""
-    if viewport_context:
-        viewport_info = f"\nThe user is currently viewing page {viewport_context.get('page', '?')}, section: {viewport_context.get('section', 'unknown')}."
-
-    context = "\n\n".join(context_parts)
-
-    messages = [
-        {
-            "role": "system",
-            "content": f"You are a research assistant. Answer questions about the document using ONLY the provided context. Cite page numbers. Render math in LaTeX.{viewport_info}\n\nDocument context:\n{context}",
-        },
-    ]
-
-    # Add conversation history (last 10)
-    if history:
-        messages.extend(history[-10:])
-
-    messages.append({"role": "user", "content": question})
-
-    # 4. Stream response
-    return await chat_completion(api_key, messages, stream=True), sources
-```
-
-- [ ] **Step 4: Create RAG SSE router**
-
-```python
-# services/processing/app/routers/rag.py
-from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
-from app.services.rag import query_rag
-import json
-
-router = APIRouter(prefix="/rag")
-
-@router.post("/query")
-async def rag_query(request: Request):
-    body = await request.json()
-    document_id = body["document_id"]
-    question = body["question"]
-    api_key = body["api_key"]
-    viewport_context = body.get("viewport_context")
-    history = body.get("history", [])
-
-    token_stream, sources = await query_rag(
-        document_id, question, api_key, viewport_context, history
-    )
-
-    async def event_stream():
-        # Send sources first
-        yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
-
-        async for token in token_stream:
-            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
-```
-
-Register in `main.py`: `from app.routers import rag` and `app.include_router(rag.router)`.
-
-- [ ] **Step 5: Create viewport tracking hook**
-
-```typescript
-// src/hooks/use-viewport-tracking.ts
-"use client";
-
-import { useState, useEffect, useRef, useCallback } from "react";
-
-interface ViewportContext {
-  page: number;
-  scrollPct: number;
-  visibleSectionIds: number[];
-}
-
-export function useViewportTracking(
-  containerRef: React.RefObject<HTMLElement | null>,
-  totalPages: number
-): ViewportContext {
-  const [context, setContext] = useState<ViewportContext>({
-    page: 1,
-    scrollPct: 0,
-    visibleSectionIds: [],
+  const result = client.callModel({
+    model: MODELS.outline,
+    instructions:
+      "You are a research paper analyzer. Return a JSON array of sections describing the paper. " +
+      'Schema: [{"title": string, "level": 1|2|3, "page": number, "preview": string}]. ' +
+      "Levels: 1 = top section, 2 = subsection, 3 = sub-subsection. " +
+      "Use real page numbers from the [Page N] markers. Return ONLY the JSON array.",
+    input: [{ role: "user", content: sample }],
   });
 
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  let raw = "";
+  for await (const delta of result.getTextStream()) raw += delta;
 
-  const handleScroll = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
+  // Strip code fences if the model emitted any.
+  const jsonText = raw
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/, "")
+    .trim();
 
-    timerRef.current = setTimeout(() => {
-      const el = containerRef.current;
-      if (!el) return;
-
-      const scrollPct = el.scrollTop / (el.scrollHeight - el.clientHeight);
-      const page = Math.max(1, Math.ceil(scrollPct * totalPages));
-
-      setContext({ page, scrollPct, visibleSectionIds: [] });
-    }, 500); // 500ms debounce per PRD
-  }, [containerRef, totalPages]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.addEventListener("scroll", handleScroll);
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, [handleScroll]);
-
-  return context;
-}
-```
-
-- [ ] **Step 6: Create chat message component**
-
-```tsx
-// src/components/reader/chat-message.tsx
-interface ChatMessageProps {
-  role: "user" | "assistant";
-  content: string;
-  sources?: { page: number; relevance: number }[];
-}
-
-export function ChatMessage({ role, content, sources }: ChatMessageProps) {
-  return (
-    <div className={`py-3 ${role === "user" ? "text-right" : ""}`}>
-      <div
-        className={`inline-block max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-          role === "user"
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted"
-        }`}
-      >
-        <p className="whitespace-pre-wrap">{content}</p>
-        {sources && sources.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {sources.map((s, i) => (
-              <span key={i} className="rounded bg-background/50 px-1.5 py-0.5 text-[10px]">
-                p.{s.page}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-```
-
-- [ ] **Step 7: Create chat hook**
-
-```typescript
-// src/hooks/use-chat.ts
-"use client";
-
-import { useState, useCallback } from "react";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  sources?: { page: number; relevance: number }[];
-}
-
-interface UseChatOptions {
-  documentId: number;
-  viewportContext: { page: number; scrollPct: number };
-}
-
-export function useChat({ documentId, viewportContext }: UseChatOptions) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const sendMessage = useCallback(async (content: string) => {
-    const userMsg: Message = { role: "user", content };
-    setMessages((prev) => [...prev, userMsg]);
-    setLoading(true);
-
-    const res = await fetch("/api/ai/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        documentId,
-        question: content,
-        viewportContext,
-        history: messages.map((m) => ({ role: m.role, content: m.content })),
-      }),
-    });
-
-    if (!res.ok || !res.body) {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Error: could not get response." }]);
-      setLoading(false);
-      return;
-    }
-
-    let assistantContent = "";
-    let sources: { page: number; relevance: number }[] = [];
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    // Add placeholder message
-    setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (line.startsWith("data: ") && line !== "data: [DONE]") {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === "sources") {
-              sources = data.sources;
-            } else if (data.type === "token") {
-              assistantContent += data.content;
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = {
-                  role: "assistant",
-                  content: assistantContent,
-                  sources,
-                };
-                return updated;
-              });
-            }
-          } catch {
-            // Skip malformed lines
-          }
-        }
-      }
-    }
-
-    setLoading(false);
-  }, [documentId, viewportContext, messages]);
-
-  return { messages, sendMessage, loading };
-}
-```
-
-- [ ] **Step 8: Create chat panel**
-
-```tsx
-// src/components/reader/chat-panel.tsx
-"use client";
-
-import { useState, useRef, useEffect } from "react";
-import { useChat } from "@/hooks/use-chat";
-import { ChatMessage } from "./chat-message";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-
-interface ChatPanelProps {
-  documentId: number;
-  viewportContext: { page: number; scrollPct: number };
-  open: boolean;
-}
-
-export function ChatPanel({ documentId, viewportContext, open }: ChatPanelProps) {
-  const { messages, sendMessage, loading } = useChat({ documentId, viewportContext });
-  const [input, setInput] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
-
-  if (!open) return null;
-
-  function handleSend() {
-    if (!input.trim() || loading) return;
-    sendMessage(input.trim());
-    setInput("");
+  let parsed: { title: string; level: number; page: number; preview?: string }[];
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    return NextResponse.json({ error: "Model returned invalid JSON", raw }, { status: 502 });
   }
 
-  return (
-    <div className="flex w-80 flex-col border-l bg-background">
-      <div className="border-b p-3">
-        <h2 className="text-sm font-semibold">Ask about this paper</h2>
-        <p className="text-[10px] text-muted-foreground">
-          Viewing page {viewportContext.page}
-        </p>
-      </div>
-      <div ref={scrollRef} className="flex-1 overflow-auto p-3">
-        {messages.length === 0 && (
-          <p className="text-xs text-muted-foreground text-center mt-8">
-            Ask a question about the paper. The AI has read the entire document and knows what you're looking at.
-          </p>
-        )}
-        {messages.map((msg, i) => (
-          <ChatMessage key={i} {...msg} />
-        ))}
-      </div>
-      <div className="border-t p-3 flex gap-2">
-        <Input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          placeholder="Ask a question..."
-          className="text-sm"
-        />
-        <Button size="sm" onClick={handleSend} disabled={loading}>
-          Send
-        </Button>
-      </div>
-    </div>
-  );
+  const inserted = await db
+    .insert(documentSections)
+    .values(
+      parsed.map((s, i) => ({
+        documentId,
+        title: s.title,
+        level: s.level ?? 1,
+        pageStart: s.page,
+        contentPreview: s.preview ?? null,
+        orderIndex: i,
+      }))
+    )
+    .returning();
+
+  return NextResponse.json({ sections: inserted });
 }
 ```
 
-- [ ] **Step 9: Create Next.js proxy route for RAG**
+- [ ] **Step 2: Rewire `outline-sidebar.tsx`**
 
-Create `src/app/api/ai/chat/route.ts` that:
-1. Authenticates the user
-2. Fetches their decrypted LLM API key from DB
-3. Proxies the request to FastAPI `/rag/query` with the key
-4. Streams the SSE response back to the client
+Point at `/api/documents/${documentId}/outline`. Render rows of shape `{ id, title, level, pageStart, contentPreview }`. On click, call `onNavigate(section.pageStart)`. Drop any old fetch URL that referenced FastAPI.
 
-- [ ] **Step 10: Wire chat panel and viewport tracking into the reader**
+- [ ] **Step 3: Create `/api/ai/explain` (Next.js, no proxy)**
 
-Update `reader-client.tsx` to include the ChatPanel, OutlineSidebar, and viewport tracking. Add toggle buttons in the toolbar for each panel.
+```typescript
+// src/app/api/ai/explain/route.ts
+import { NextRequest } from "next/server";
+import { auth } from "@/lib/auth";
+import { getOpenRouterClient, MODELS } from "@/lib/ai/openrouter";
 
-- [ ] **Step 11: Test end-to-end**
+export async function POST(request: NextRequest) {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session?.user) return new Response("Unauthorized", { status: 401 });
 
-1. Ensure a document has been processed (chunks + embeddings exist)
-2. Open reader → open chat panel
-3. Ask a question about the paper
-4. Response streams in with page citations
-5. Scroll → viewport context updates in panel header
+  const { text } = (await request.json()) as { text: string; documentId: number };
+  if (!text?.trim()) return new Response("Bad Request", { status: 400 });
 
-- [ ] **Step 12: Commit**
+  const client = await getOpenRouterClient(Number(session.user.id));
+  const result = client.callModel({
+    model: MODELS.chat,
+    instructions:
+      "You are a concise research tutor. Explain the highlighted passage in plain English in <120 words.",
+    input: [{ role: "user", content: text }],
+  });
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      try {
+        for await (const delta of result.getTextStream()) {
+          controller.enqueue(encoder.encode(`data: ${delta}\n\n`));
+        }
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } catch (err) {
+        controller.enqueue(encoder.encode(`data: [ERROR] ${(err as Error).message}\n\n`));
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+```
+
+- [ ] **Step 4: Verification**
+
+1. Open a previously uploaded paper in the reader.
+2. Open the outline sidebar — first request runs the LLM and persists rows; subsequent requests return immediately from `documentSections`.
+3. Click a section → reader scrolls to that page.
+4. Select text → "Explain this" → SSE tokens stream into the panel.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/db/schema/agent-conversations.ts src/db/schema/agent-messages.ts src/db/schema/index.ts \
-  services/processing/app/services/rag.py services/processing/app/services/embeddings.py \
-  services/processing/app/routers/rag.py services/processing/app/tasks/generate_embeddings.py \
-  src/hooks/use-chat.ts src/hooks/use-viewport-tracking.ts \
-  src/components/reader/chat-panel.tsx src/components/reader/chat-message.tsx \
-  src/app/api/ai/
-git commit -m "feat(rag): add RAG Q&A chat with viewport awareness and SSE streaming"
+git add src/app/api/documents/\[id\]/outline/ src/app/api/ai/explain/ \
+  src/components/reader/outline-sidebar.tsx src/components/reader/section-preview.tsx \
+  src/components/reader/concepts-panel.tsx
+git commit -m "feat(ai): add Next.js outline route and explain SSE; drop FastAPI proxy"
+```
+
+---
+
+## Phase 1.3 — Minimal RAG Chat (Next.js + SSE)
+
+### Task 17: RAG chat route + client cleanup
+
+**Files:**
+- Create: `src/app/api/documents/[id]/chat/route.ts`
+- Modify: `src/hooks/use-chat.ts` (point at `/api/documents/${id}/chat`; drop `api_key` from body)
+- Modify: `src/components/reader/chat-panel.tsx` (drop `apiKey` prop)
+- Modify: `src/app/(reader)/reader/[documentId]/reader-client.tsx` (delete the api-key fetching `useEffect` and `apiKey` state)
+- Reuse existing: `src/hooks/use-viewport-tracking.ts`, `src/components/reader/chat-message.tsx`, `agentConversations`, `agentMessages` schemas
+
+> The current chat UI in `src/components/reader/chat-panel.tsx` + `src/hooks/use-chat.ts` points at a nonexistent `http://localhost:8000/rag/chat` Python backend. This phase deletes that path and replaces it with a single Next.js route handler.
+
+- [ ] **Step 1: Create the RAG chat route**
+
+```typescript
+// src/app/api/documents/[id]/chat/route.ts
+import { NextRequest } from "next/server";
+import { auth } from "@/lib/auth";
+import { db } from "@/db";
+import {
+  documents,
+  documentChunks,
+  agentConversations,
+  agentMessages,
+} from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { getOpenRouterClient, MODELS } from "@/lib/ai/openrouter";
+import { embedQuery } from "@/lib/ai/embeddings";
+
+interface ChatBody {
+  question: string;
+  conversationId?: number;
+  viewportContext?: { page?: number };
+  history?: { role: "user" | "assistant"; content: string }[];
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session?.user) return new Response("Unauthorized", { status: 401 });
+
+  const { id } = await params;
+  const documentId = Number(id);
+  const userId = Number(session.user.id);
+
+  // Ownership check.
+  const [doc] = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(eq(documents.id, documentId), eq(documents.userId, userId)));
+  if (!doc) return new Response("Not found", { status: 404 });
+
+  const body = (await request.json()) as ChatBody;
+  if (!body.question?.trim()) return new Response("Bad Request", { status: 400 });
+
+  let client;
+  try {
+    client = await getOpenRouterClient(userId);
+  } catch {
+    return new Response("Add an OpenRouter key in Settings", { status: 400 });
+  }
+
+  // 1. Embed the question.
+  const queryVec = await embedQuery(userId, body.question);
+
+  // 2. pgvector top-K, biased by current viewport page (±1).
+  const currentPage = body.viewportContext?.page ?? null;
+  const topK = 6;
+
+  // Cosine distance via the <=> operator. Bias = chunks whose pages overlap
+  // [page-1, page+1] get a small score boost.
+  const rows = await db.execute<{
+    id: number;
+    content: string;
+    page_start: number;
+    page_end: number;
+    score: number;
+  }>(sql`
+    SELECT id, content, page_start, page_end,
+      (1 - (embedding <=> ${sql.raw(`'[${queryVec.join(",")}]'`)}::vector))
+        + CASE
+            WHEN ${currentPage}::int IS NOT NULL
+             AND page_start <= ${currentPage}::int + 1
+             AND page_end   >= ${currentPage}::int - 1
+            THEN 0.05
+            ELSE 0
+          END AS score
+    FROM document_chunks
+    WHERE document_id = ${documentId}
+      AND embedding IS NOT NULL
+    ORDER BY score DESC
+    LIMIT ${topK}
+  `);
+
+  const contextText = rows
+    .map((r) => `[Page ${r.page_start}]\n${r.content}`)
+    .join("\n\n---\n\n");
+
+  // 3. Conversation persistence.
+  let conversationId = body.conversationId;
+  if (!conversationId) {
+    const [conv] = await db
+      .insert(agentConversations)
+      .values({ userId, documentId, title: body.question.slice(0, 80) })
+      .returning({ id: agentConversations.id });
+    conversationId = conv.id;
+  }
+
+  await db.insert(agentMessages).values({
+    conversationId,
+    role: "user",
+    content: body.question,
+    inputMode: "text",
+    viewportContext: body.viewportContext ?? null,
+  });
+
+  // 4. Build messages and stream.
+  const systemPrompt =
+    "You are a research assistant answering questions about a single PDF. " +
+    "Use ONLY the provided context. Cite page numbers inline as (p. N). " +
+    "If the answer is not in the context, say so.";
+
+  const inputMessages: { role: "user" | "assistant" | "system"; content: string }[] = [
+    { role: "system", content: `${systemPrompt}\n\nContext:\n${contextText}` },
+    ...(body.history ?? []).slice(-10),
+    { role: "user", content: body.question },
+  ];
+
+  const result = client.callModel({
+    model: MODELS.chat,
+    input: inputMessages,
+  });
+
+  // 5. Stream as SSE in the OpenAI-style shape that `use-chat.ts` parses:
+  //    `data: { type: 'sources', sources: [...] }`
+  //    `data: { type: 'token',   content: '...' }`
+  //    `data: [DONE]`
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const send = (obj: unknown) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+
+      const sources = rows.map((r) => ({ page: r.page_start, relevance: Number(r.score) }));
+      send({ type: "sources", sources });
+
+      let assistantContent = "";
+      try {
+        for await (const delta of result.getTextStream()) {
+          assistantContent += delta;
+          send({ type: "token", content: delta });
+        }
+      } catch (err) {
+        send({ type: "token", content: `\n\n[error: ${(err as Error).message}]` });
+      }
+
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+
+      // Persist assistant message after the stream closes.
+      await db.insert(agentMessages).values({
+        conversationId: conversationId!,
+        role: "assistant",
+        content: assistantContent,
+        inputMode: "text",
+        ragSources: sources,
+        modelUsed: MODELS.chat,
+      });
+      await db
+        .update(agentConversations)
+        .set({ updatedAt: new Date(), messageCount: sql`message_count + 2` })
+        .where(eq(agentConversations.id, conversationId!));
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+```
+
+> **Note on the SDK shape:** `callModel` + `getTextStream()` is the v0 surface. If multi-step tool use is wanted later (e.g. let the model call a `lookupCitation` tool), add `tools: [tool({...})]` and `stopWhen: [stepCountIs(5)]` to the same `callModel` call. No agent framework needed.
+
+- [ ] **Step 2: Update `src/hooks/use-chat.ts`**
+
+- Change the URL to `/api/documents/${documentId}/chat`.
+- Drop `api_key` from the POST body. Drop any code that tried to fetch the key client-side.
+- Keep the existing SSE parsing — the route emits the same `{type: 'sources'|'token'}` shape.
+- POST body becomes `{ question, viewportContext, history, conversationId? }`.
+
+- [ ] **Step 3: Update `src/components/reader/chat-panel.tsx`**
+
+- Remove the `apiKey` prop entirely.
+- Component depends only on `documentId` + `viewportContext` + `open`.
+
+- [ ] **Step 4: Update `src/app/(reader)/reader/[documentId]/reader-client.tsx`**
+
+- Delete the `useEffect` that fetched the user's API key on the client.
+- Delete the `apiKey` state.
+- Pass nothing extra to `<ChatPanel />`.
+
+- [ ] **Step 5: Verification**
+
+1. Upload a fresh PDF; wait for processing to flip to `ready`.
+2. Open the reader → open the chat panel.
+3. Ask "What is this paper about?" → tokens stream in, sources show `(p. N)` chips.
+4. Scroll to a specific page → ask a question that should be answered from that page → top result is from `page ± 1`.
+5. `psql`: confirm new rows in `agent_conversations` and `agent_messages` (one user + one assistant per turn, with `rag_sources` populated).
+6. Confirm no network requests go to `localhost:8000`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/app/api/documents/\[id\]/chat/ \
+  src/hooks/use-chat.ts \
+  src/components/reader/chat-panel.tsx \
+  src/app/\(reader\)/reader/\[documentId\]/reader-client.tsx
+git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK plumbing"
 ```
 
 ---
@@ -3646,7 +3100,7 @@ git commit -m "feat(rag): add RAG Q&A chat with viewport awareness and SSE strea
 
 **Tasks:**
 - [ ] Task 24: Auto-highlight Drizzle schema
-- [ ] Task 25: Classification Celery task (send sentences to LLM → classify as novelty/method/result/background/limitation)
+- [ ] Task 25: Classification job (Next.js route handler — sentences → LLM → classify as novelty/method/result/background/limitation)
 - [ ] Task 26: Auto-highlight overlay component (color-coded by classification, toggleable)
 
 ## Phase 2.2 — Enhanced AI Agent + TTS
@@ -3673,7 +3127,7 @@ git commit -m "feat(rag): add RAG Q&A chat with viewport awareness and SSE strea
 
 **Tasks:**
 - [ ] Task 33: Figure/formula Drizzle schemas
-- [ ] Task 34: Figure detection Celery task (extract bounding boxes, crop images)
+- [ ] Task 34: Figure detection job (Next.js route handler — extract bounding boxes, crop images)
 - [ ] Task 35: Formula extraction task (Mistral OCR → LaTeX)
 - [ ] Task 36: Click-to-zoom figure component with AI explanation
 - [ ] Task 37: Formula explanation panel with KaTeX rendering
@@ -3743,6 +3197,6 @@ git commit -m "feat(rag): add RAG Q&A chat with viewport awareness and SSE strea
 After each sub-phase:
 1. `npm run build` — zero TypeScript errors
 2. `npm run dev` — feature works in browser
-3. `docker compose up` — backend services healthy (Phase 1.0+)
+3. `docker compose up -d` — Postgres (pgvector) is the only required service
 4. Manual test acceptance criteria per task
 5. Commit with descriptive message
