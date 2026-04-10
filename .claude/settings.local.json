@@ -35,7 +35,32 @@
       "Bash(npx tsc:*)",
       "Bash(grep -E \"^react-pdf$|^pdfjs-dist$|^zustand$\")",
       "Bash(python:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(head:*)",
+      "Bash(npx next:*)",
+      "Bash(npm ls:*)",
+      "Bash(npx playwright:*)",
+      "Bash(npm install:*)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_fill_form",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_file_upload",
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "mcp__plugin_playwright_playwright__browser_evaluate",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "mcp__plugin_playwright_playwright__browser_network_requests",
+      "WebFetch(domain:tiangolo.com)",
+      "Bash(npx skills:*)",
+      "Read(//Users/mohidbutt/.agents/skills/**)",
+      "Read(//Users/mohidbutt/.claude/skills/**)",
+      "mcp__plugin_playwright_playwright__browser_close",
+      "Bash(pkill -f \"mcp-chrome\")",
+      "Bash(find:*)",
+      "Bash(xxd)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(grep -E \"\\\\.\\(md|txt\\)$\")"
     ]
   }
 }
