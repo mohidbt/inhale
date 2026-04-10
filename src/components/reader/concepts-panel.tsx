@@ -46,22 +46,19 @@ export function ConceptsPanel({ selectedText, open }: ConceptsPanelProps) {
 
         const reader = res.body!.getReader();
         const decoder = new TextDecoder();
-        let accumulated = "";
+        let buffer = "";
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          const chunk = decoder.decode(value);
-          const lines = chunk.split("\n\n").filter((l) => l.startsWith("data: "));
-          for (const line of lines) {
-            const data = line.slice(6);
-            if (data === "[DONE]") break;
-            if (data.startsWith("[ERROR]")) {
-              setError(data.slice(7).trim());
-              break;
-            }
-            accumulated += data;
-            setExplanation(accumulated);
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop()!; // keep incomplete last frame
+          for (const part of parts) {
+            if (!part.startsWith("data: ")) continue;
+            const data = part.slice(6).trim();
+            if (data === "[DONE]" || data.startsWith("[ERROR]")) break;
+            setExplanation((prev) => prev + data);
           }
         }
       } catch (err: unknown) {

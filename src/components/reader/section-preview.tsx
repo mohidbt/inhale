@@ -1,11 +1,12 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface SectionPreviewProps {
   title: string;
   preview: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 export function SectionPreview({ title, preview, children }: SectionPreviewProps) {

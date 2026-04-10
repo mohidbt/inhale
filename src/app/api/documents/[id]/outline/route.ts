@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { documents, documentSections } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { getOpenRouterClient, MODELS } from "@/lib/ai/openrouter";
-import { extractPdfPages } from "@/lib/ai/pdf-text";
+import { extractPdfPages, type ExtractedPage } from "@/lib/ai/pdf-text";
 
 export async function GET(
   request: NextRequest,
@@ -39,7 +39,13 @@ export async function GET(
     return NextResponse.json({ error: "Add an OpenRouter key in Settings" }, { status: 400 });
   }
 
-  const pages = await extractPdfPages(doc.filePath);
+  let pages: ExtractedPage[];
+  try {
+    pages = await extractPdfPages(doc.filePath);
+  } catch (err) {
+    console.error("[outline] PDF extraction failed", err);
+    return NextResponse.json({ error: "Failed to read PDF" }, { status: 500 });
+  }
   const sample = pages
     .slice(0, 30)
     .map((p) => `[Page ${p.pageNumber}]\n${p.text}`)
@@ -57,19 +63,33 @@ export async function GET(
   let raw = "";
   for await (const delta of result.getTextStream()) raw += delta;
 
-  const jsonText = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const jsonText = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/, "")
+    .trim();
 
-  let parsed: { title: string; page: number; preview?: string }[];
+  let parsed: unknown;
   try {
     parsed = JSON.parse(jsonText);
   } catch {
     return NextResponse.json({ error: "Model returned invalid JSON", raw }, { status: 502 });
   }
 
+  if (!Array.isArray(parsed)) {
+    return NextResponse.json({ error: "Model returned non-array JSON", raw }, { status: 502 });
+  }
+  const valid = (parsed as { title?: unknown; page?: unknown; preview?: unknown }[]).filter(
+    (s) => typeof s.title === "string" && typeof s.page === "number"
+  ) as { title: string; page: number; preview?: string }[];
+  if (valid.length === 0) {
+    return NextResponse.json({ error: "Model returned no valid sections", raw }, { status: 502 });
+  }
+
   const inserted = await db
     .insert(documentSections)
     .values(
-      parsed.map((s, i) => ({
+      valid.map((s, i) => ({
         documentId,
         sectionIndex: i,
         title: s.title,

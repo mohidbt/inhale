@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { SectionPreview } from "./section-preview";
 
 interface DocumentSection {
   id: number;
@@ -63,20 +64,25 @@ export function OutlineSidebar({ documentId, open, onNavigate }: OutlineSidebarP
         )}
         {!loading && !error && sections.length > 0 && (
           <div className="space-y-4">
-            {sections.map((section) => (
-              <button
-                key={section.id}
-                className="w-full space-y-1 text-left"
-                onClick={() => onNavigate?.(section.pageStart)}
+            {sections.map((section, i) => (
+              <SectionPreview
+                key={section.id ?? i}
+                title={section.title ?? ""}
+                preview={section.content}
               >
-                <p className="text-xs font-medium leading-snug">{section.title ?? "Untitled"}</p>
-                <p className="text-[10px] text-muted-foreground">Page {section.pageStart}</p>
-                {section.content && (
-                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                    {section.content}
-                  </p>
-                )}
-              </button>
+                <button
+                  className="w-full space-y-1 text-left"
+                  onClick={() => onNavigate?.(section.pageStart)}
+                >
+                  <p className="text-xs font-medium leading-snug">{section.title ?? "Untitled"}</p>
+                  <p className="text-[10px] text-muted-foreground">Page {section.pageStart}</p>
+                  {section.content && (
+                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                      {section.content}
+                    </p>
+                  )}
+                </button>
+              </SectionPreview>
             ))}
           </div>
         )}

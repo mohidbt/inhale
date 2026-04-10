@@ -8,6 +8,8 @@ import { HighlightsSidebar } from "@/components/reader/highlights-sidebar";
 import { CommentThread } from "@/components/reader/comment-thread";
 import { CommentInput } from "@/components/reader/comment-input";
 import { ChatPanel } from "@/components/reader/chat-panel";
+import { OutlineSidebar } from "@/components/reader/outline-sidebar";
+import { ConceptsPanel } from "@/components/reader/concepts-panel";
 import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
 
@@ -40,6 +42,8 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentSidebarOpen, setCommentSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [conceptsOpen, setConceptsOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const pdfScrollRef = useRef<HTMLDivElement>(null);
   const { selection, clearSelection } = useTextSelection();
@@ -100,6 +104,10 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         showCommentInput={showCommentInput}
         chatOpen={chatOpen}
         onToggleChat={() => setChatOpen((o) => !o)}
+        outlineOpen={outlineOpen}
+        onToggleOutline={() => setOutlineOpen((o) => !o)}
+        conceptsOpen={conceptsOpen}
+        onToggleConcepts={() => setConceptsOpen((o) => !o)}
       />
       {saveError && (
         <div className="bg-destructive/10 text-destructive px-4 py-2 text-sm">
@@ -132,6 +140,15 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
           open={chatOpen}
           scrollContainerRef={pdfScrollRef}
           apiKey={apiKey}
+        />
+        <OutlineSidebar
+          documentId={documentId}
+          open={outlineOpen}
+          onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
+        />
+        <ConceptsPanel
+          selectedText={selection?.text ?? ""}
+          open={conceptsOpen}
         />
         {selection && (
           <SelectionToolbar
