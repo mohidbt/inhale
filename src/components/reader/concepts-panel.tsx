@@ -1,68 +1,103 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-
-interface Concept {
-  term: string;
-  definition: string;
-}
+import { useEffect, useRef, useState } from "react";
 
 interface ConceptsPanelProps {
-  documentId: number;
+  selectedText: string;
   open: boolean;
 }
 
-export function ConceptsPanel({ documentId, open }: ConceptsPanelProps) {
-  const [concepts, setConcepts] = useState<Concept[]>([]);
+export function ConceptsPanel({ selectedText, open }: ConceptsPanelProps) {
+  const [explanation, setExplanation] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const loadConcepts = useCallback(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    fetch(`/api/documents/${documentId}/outline`, { signal: controller.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data) => setConcepts(data.concepts ?? []))
-      .catch((err: unknown) => {
-        if (err instanceof Error && err.name !== "AbortError") {
-          setError("Failed to load concepts");
-        }
-      })
-      .finally(() => setLoading(false));
-    return () => controller.abort();
-  }, [documentId]);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!open) return;
-    return loadConcepts();
-  }, [open, loadConcepts]);
+    if (!open || !selectedText.trim()) {
+      setExplanation("");
+      setError(null);
+      return;
+    }
+
+    // Abort any in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setLoading(true);
+    setExplanation("");
+    setError(null);
+
+    (async () => {
+      try {
+        const res = await fetch("/api/ai/explain", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: selectedText }),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          const msg = await res.text();
+          setError(msg || `Error ${res.status}`);
+          return;
+        }
+
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop()!; // keep incomplete last frame
+          for (const part of parts) {
+            if (!part.startsWith("data: ")) continue;
+            const data = part.slice(6).trim();
+            if (data === "[DONE]") break;
+            if (data.startsWith("[ERROR]")) {
+              setError(data.slice(7).trim() || "Explanation failed");
+              break;
+            }
+            setExplanation((prev) => prev + data);
+          }
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== "AbortError") {
+          setError("Failed to get explanation");
+        }
+      } finally {
+        setLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [selectedText, open]);
 
   if (!open) return null;
 
   return (
-    <div className="flex w-72 flex-col border-l bg-background">
+    <div data-testid="concepts-panel" className="flex w-72 flex-col border-l bg-background">
       <div className="flex items-center justify-between border-b p-4">
-        <h2 className="text-sm font-semibold">Key Concepts</h2>
+        <h2 className="text-sm font-semibold">Explain</h2>
       </div>
       <div className="flex-1 overflow-auto p-4">
-        {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        {!loading && !error && concepts.length === 0 && (
-          <p className="text-xs text-muted-foreground">No concepts extracted yet.</p>
+        {!selectedText.trim() && (
+          <p className="text-xs text-muted-foreground">
+            Select text in the document to get an explanation.
+          </p>
         )}
-        {!loading && !error && concepts.length > 0 && (
-          <div className="space-y-4">
-            {concepts.map((c, i) => (
-              <div key={i} className="space-y-1">
-                <p className="text-xs font-bold leading-snug">{c.term}</p>
-                <p className="text-xs text-muted-foreground leading-relaxed">{c.definition}</p>
-              </div>
-            ))}
-          </div>
+        {selectedText.trim() && loading && !explanation && (
+          <p className="text-xs text-muted-foreground">Explaining...</p>
+        )}
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        {explanation && (
+          <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
+            {explanation}
+          </p>
         )}
       </div>
     </div>

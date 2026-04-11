@@ -15,6 +15,10 @@ interface ReaderToolbarProps {
   showCommentInput?: boolean;
   chatOpen?: boolean;
   onToggleChat?: () => void;
+  outlineOpen?: boolean;
+  onToggleOutline?: () => void;
+  conceptsOpen?: boolean;
+  onToggleConcepts?: () => void;
 }
 
 export function ReaderToolbar({
@@ -27,6 +31,10 @@ export function ReaderToolbar({
   showCommentInput,
   chatOpen,
   onToggleChat,
+  outlineOpen,
+  onToggleOutline,
+  conceptsOpen,
+  onToggleConcepts,
 }: ReaderToolbarProps) {
   const { currentPage, totalPages, setScrollTargetPage } = useReaderState();
 
@@ -89,6 +97,24 @@ export function ReaderToolbar({
             onClick={onToggleChat}
           >
             Chat
+          </Button>
+        )}
+        {onToggleOutline && (
+          <Button
+            variant={outlineOpen ? "secondary" : "ghost"}
+            size="sm"
+            onClick={onToggleOutline}
+          >
+            Outline
+          </Button>
+        )}
+        {onToggleConcepts && (
+          <Button
+            variant={conceptsOpen ? "secondary" : "ghost"}
+            size="sm"
+            onClick={onToggleConcepts}
+          >
+            Explain
           </Button>
         )}
       </div>
