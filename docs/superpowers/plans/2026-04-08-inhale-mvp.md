@@ -26,10 +26,11 @@
 | **0.3 — PDF Reader (Core Rendering)** | DONE | next/dynamic SSR fix, Prev/Next scroll, manual-scroll no-feedback fix, real-paper benchmark passing (18/18 e2e) |
 | **0.4 — Highlighting** | DONE | Schema, CRUD, color picker toolbar, sidebar, AbortController + DOMRect serialization fixes |
 | **0.5 — Comments & BYOK Settings** | DONE | Encrypted user_api_keys storage, settings UI |
-| **1.0 — BYOK OpenRouter (server-side)** | DONE | Replaces old "FastAPI Service Bootstrap" |
-| 1.1 — Chunking + pgvector | Pending | Replaces old "Celery Pipeline" — inline on upload |
-| 1.2 — AI Outline via Next.js route | Pending | Replaces old "AI Outline" — pure server route |
-| 1.3 — Minimal RAG Chat | Pending | Replaces old "Basic RAG + Viewport" — Next.js route + SSE |
+| **1.0 — BYOK OpenRouter (server-side)** | DONE | `getDecryptedApiKey` + `getOpenRouterClient` + `MODELS`. `services/processing/` deleted. `@openrouter/sdk` named import. |
+| **1.1 — Chunking + pgvector** | DONE | `unpdf` text extraction, sliding-window chunker, OpenRouter embeddings via fetch, inline on upload with `processingStatus`. |
+| **1.2 — AI Outline via Next.js route** | DONE | `/api/documents/[id]/outline` (cached in `documentSections`), `/api/ai/explain` SSE, `OutlineSidebar` + `ConceptsPanel` + `SectionPreview` wired into reader. |
+| **1.3 — Minimal RAG Chat** | DONE | `/api/documents/[id]/chat` — pgvector retrieval + viewport bias, SSE, conversation persistence, `conversationId` round-trip. Client BYOK fetch removed. |
+| **E2E — Playwright test suite** | DONE | `e2e/ai-features.spec.ts` — 4 tests: upload→chunk API contract, outline sidebar (mocked), explain SSE (mocked), RAG chat turn (mocked). Added `data-testid` to `OutlineSidebar` + `ConceptsPanel` for stable selectors. Tests 2–4 use `page.route()` — no real OpenRouter key needed. |
 | 2.0–2.3 | Pending | — |
 | 3.0–3.3 | Pending | — |
 | 4.0–4.4 | Pending | — |

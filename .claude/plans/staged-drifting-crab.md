@@ -26,6 +26,7 @@ Inhale is an AI-enhanced interactive PDF reader for scientific papers. The PRD/E
 | **1.1 — Document Chunking + pgvector** | DONE | pgvector enabled, `embedding vector(1536)` + ivfflat index on `document_chunks`. `unpdf` for server-side text extraction. Chunker (500-token/50-overlap). Embeddings via OpenRouter REST fetch. Inline on upload — sets `processingStatus` ready/failed. |
 | **1.2 — AI Outline (Next.js route)** | DONE | `/api/documents/[id]/outline` — caches in `documentSections`, generates via OpenRouter on first request. `/api/ai/explain` SSE route for selected text. `OutlineSidebar` + `ConceptsPanel` + `SectionPreview` wired into reader. |
 | **1.3 — Minimal RAG Chat (Next.js)** | DONE | `/api/documents/[id]/chat` — pgvector retrieval with viewport bias, SSE stream, conversation persistence. `use-chat.ts` rewritten (no FastAPI, proper SSE buffer, `conversationId` round-trip). `apiKey` client-side fetch removed. |
+| **E2E — Playwright test suite** | DONE | `e2e/ai-features.spec.ts` — 4 tests covering Phase 1 happy paths: upload→chunk API contract, outline sidebar (mocked), explain SSE (mocked), RAG chat turn (mocked). Added `data-testid` to `OutlineSidebar` + `ConceptsPanel` for stable selectors. |
 | 2.0–3.3 | Pending | — |
 | 4.0–4.4 | Pending | — |
 
