@@ -46,7 +46,8 @@ export function useChat(documentId: number) {
           throw new Error(text || `HTTP ${response.status}`);
         }
 
-        const reader = response.body!.getReader();
+        if (!response.body) throw new Error("No response body");
+        const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
 
@@ -67,9 +68,13 @@ export function useChat(documentId: number) {
                 content?: string;
                 sources?: ChatSource[];
                 message?: string;
+                conversationId?: number;
               };
               if (parsed.type === "sources" && parsed.sources) {
                 setSources(parsed.sources);
+                if (parsed.conversationId != null) {
+                  setConversationId(parsed.conversationId);
+                }
               } else if (parsed.type === "token" && parsed.content) {
                 setMessages((prev) => {
                   const updated = [...prev];

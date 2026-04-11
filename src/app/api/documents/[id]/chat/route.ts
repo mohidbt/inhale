@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { documents, agentConversations, agentMessages } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
-import { getOpenRouterClient, getDecryptedApiKey, MODELS } from "@/lib/ai/openrouter";
+import { OpenRouter } from "@openrouter/sdk";
+import { getDecryptedApiKey, MODELS } from "@/lib/ai/openrouter";
 import { embedQuery } from "@/lib/ai/embeddings";
 
 interface ChatBody {
@@ -40,10 +41,14 @@ export async function POST(
   } catch {
     return new Response("Add an OpenRouter key in Settings", { status: 400 });
   }
-  const client = await getOpenRouterClient(userId);
+  const client = new OpenRouter({ apiKey });
 
   // Embed question (embedQuery takes apiKey, not userId)
   const queryVec = await embedQuery(apiKey, body.question);
+
+  if (!queryVec.every((n) => Number.isFinite(n))) {
+    return new Response("Invalid embedding response", { status: 502 });
+  }
 
   // pgvector top-K with optional viewport bias
   const currentPage = body.viewportContext?.page ?? null;
@@ -109,7 +114,7 @@ export async function POST(
       const send = (obj: unknown) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
 
-      send({ type: "sources", sources });
+      send({ type: "sources", sources, conversationId });
 
       let assistantContent = "";
       try {
@@ -125,15 +130,19 @@ export async function POST(
       controller.close();
 
       // Persist assistant turn after stream closes
-      await db.insert(agentMessages).values({
-        conversationId: conversationId!,
-        role: "assistant",
-        content: assistantContent,
-      });
-      await db
-        .update(agentConversations)
-        .set({ updatedAt: new Date() })
-        .where(eq(agentConversations.id, conversationId!));
+      try {
+        await db.insert(agentMessages).values({
+          conversationId: conversationId!,
+          role: "assistant",
+          content: assistantContent,
+        });
+        await db
+          .update(agentConversations)
+          .set({ updatedAt: new Date() })
+          .where(eq(agentConversations.id, conversationId!));
+      } catch (err) {
+        console.error("[chat/route] Failed to persist assistant message:", err);
+      }
     },
   });
 
