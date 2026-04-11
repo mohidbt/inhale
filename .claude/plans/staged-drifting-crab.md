@@ -22,10 +22,10 @@ Inhale is an AI-enhanced interactive PDF reader for scientific papers. The PRD/E
 | **0.3 — PDF Reader** | DONE | react-pdf v10, Turbopack canvas alias, Zustand reader state, toolbar, zoom, page nav. |
 | **0.4 — Highlighting** | DONE | user_highlights schema, highlight CRUD API, text selection, highlight layer placeholder, highlights sidebar, SelectionToolbar. |
 | **0.5 — Comments & BYOK Settings** | DONE | user_comments schema + CRUD API, CommentInput/CommentThread UI, AES-256-GCM encryption, BYOK settings page + API. |
-| **1.0 — BYOK OpenRouter (server-side)** | PARTIAL | Schema only: `user_api_keys` exists with AES-256-GCM encryption helper. Runtime helper (`src/lib/ai/openrouter.ts`) and live ping not yet built. FastAPI bootstrap from prior plan revision is being deleted. |
-| **1.1 — Document Chunking + pgvector** | PARTIAL | Schemas only: `document_sections`, `document_chunks`, `processing_jobs` tables exist. pgvector extension not enabled, no `embedding` column, no chunker, no upload-time write path. |
-| **1.2 — AI Outline (Next.js route)** | PARTIAL | Schema only: `document_outlines` exists. `/api/documents/[id]/outline` route exists but currently proxies a nonexistent FastAPI service. Outline-sidebar UI component exists. Needs full server-side rewrite. |
-| **1.3 — Minimal RAG Chat (Next.js)** | PARTIAL | Schemas only: `agent_conversations`, `agent_messages` exist. `use-chat.ts` + `chat-panel.tsx` UI exist but POST to `http://localhost:8000/rag/chat` (does not exist). Needs `/api/documents/[id]/chat` SSE route and client URL swap. |
+| **1.0 — BYOK OpenRouter (server-side)** | DONE | `src/lib/ai/openrouter.ts` — `getDecryptedApiKey` + `getOpenRouterClient` + `MODELS`. `services/processing/` deleted. `docker-compose.yml` cleaned to Postgres-only. `@openrouter/sdk` uses named import `{ OpenRouter }`. |
+| **1.1 — Document Chunking + pgvector** | DONE | pgvector enabled, `embedding vector(1536)` + ivfflat index on `document_chunks`. `unpdf` for server-side text extraction. Chunker (500-token/50-overlap). Embeddings via OpenRouter REST fetch. Inline on upload — sets `processingStatus` ready/failed. |
+| **1.2 — AI Outline (Next.js route)** | DONE | `/api/documents/[id]/outline` — caches in `documentSections`, generates via OpenRouter on first request. `/api/ai/explain` SSE route for selected text. `OutlineSidebar` + `ConceptsPanel` + `SectionPreview` wired into reader. |
+| **1.3 — Minimal RAG Chat (Next.js)** | DONE | `/api/documents/[id]/chat` — pgvector retrieval with viewport bias, SSE stream, conversation persistence. `use-chat.ts` rewritten (no FastAPI, proper SSE buffer, `conversationId` round-trip). `apiKey` client-side fetch removed. |
 | 2.0–3.3 | Pending | — |
 | 4.0–4.4 | Pending | — |
 

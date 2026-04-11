@@ -26,7 +26,7 @@
 | **0.3 — PDF Reader (Core Rendering)** | DONE | next/dynamic SSR fix, Prev/Next scroll, manual-scroll no-feedback fix, real-paper benchmark passing (18/18 e2e) |
 | **0.4 — Highlighting** | DONE | Schema, CRUD, color picker toolbar, sidebar, AbortController + DOMRect serialization fixes |
 | **0.5 — Comments & BYOK Settings** | DONE | Encrypted user_api_keys storage, settings UI |
-| **1.0 — BYOK OpenRouter (server-side)** | NEXT | Replaces old "FastAPI Service Bootstrap" |
+| **1.0 — BYOK OpenRouter (server-side)** | DONE | Replaces old "FastAPI Service Bootstrap" |
 | 1.1 — Chunking + pgvector | Pending | Replaces old "Celery Pipeline" — inline on upload |
 | 1.2 — AI Outline via Next.js route | Pending | Replaces old "AI Outline" — pure server route |
 | 1.3 — Minimal RAG Chat | Pending | Replaces old "Basic RAG + Viewport" — Next.js route + SSE |
@@ -2361,7 +2361,7 @@ import { decrypt } from "@/lib/encryption";
  * Throws if the user has not stored an LLM key yet — callers should
  * surface a "Add an OpenRouter key in Settings" message.
  */
-export async function getOpenRouterClient(userId: number): Promise<OpenRouter> {
+export async function getOpenRouterClient(userId: string): Promise<OpenRouter> {
   const [row] = await db
     .select({ encryptedKey: userApiKeys.encryptedKey })
     .from(userApiKeys)
@@ -2562,7 +2562,7 @@ import { MODELS } from "./openrouter";
 
 const EMBED_URL = "https://openrouter.ai/api/v1/embeddings";
 
-async function getDecryptedKey(userId: number): Promise<string> {
+async function getDecryptedKey(userId: string): Promise<string> {
   const [row] = await db
     .select({ encryptedKey: userApiKeys.encryptedKey })
     .from(userApiKeys)
@@ -2571,7 +2571,7 @@ async function getDecryptedKey(userId: number): Promise<string> {
   return decrypt(row.encryptedKey);
 }
 
-export async function embedTexts(userId: number, inputs: string[]): Promise<number[][]> {
+export async function embedTexts(userId: string, inputs: string[]): Promise<number[][]> {
   if (inputs.length === 0) return [];
   const apiKey = await getDecryptedKey(userId);
   const res = await fetch(EMBED_URL, {
@@ -2589,7 +2589,7 @@ export async function embedTexts(userId: number, inputs: string[]): Promise<numb
   return json.data.map((d) => d.embedding);
 }
 
-export async function embedQuery(userId: number, query: string): Promise<number[]> {
+export async function embedQuery(userId: string, query: string): Promise<number[]> {
   const [vec] = await embedTexts(userId, [query]);
   return vec;
 }
