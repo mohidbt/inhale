@@ -80,7 +80,7 @@ export function ConceptsPanel({ selectedText, open }: ConceptsPanelProps) {
   if (!open) return null;
 
   return (
-    <div className="flex w-72 flex-col border-l bg-background">
+    <div data-testid="concepts-panel" className="flex w-72 flex-col border-l bg-background">
       <div className="flex items-center justify-between border-b p-4">
         <h2 className="text-sm font-semibold">Explain</h2>
       </div>

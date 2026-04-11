@@ -5,7 +5,14 @@ import * as path from "path";
 
 const pdfPath = path.join(__dirname, "fixtures/test.pdf");
 
-async function uploadTestPdf(page: Parameters<typeof signUpAndLogin>[0]) {
+interface TestDocument {
+  id: number;
+  processingStatus: string;
+}
+
+async function uploadTestPdf(
+  page: Parameters<typeof signUpAndLogin>[0]
+): Promise<TestDocument> {
   const pdfBuffer = fs.readFileSync(pdfPath);
   const response = await page.request.post("/api/documents/upload", {
     multipart: {
@@ -18,33 +25,21 @@ async function uploadTestPdf(page: Parameters<typeof signUpAndLogin>[0]) {
   });
   expect(response.status()).toBe(201);
   const body = await response.json();
-  return body.document.id as number;
+  return body.document as TestDocument;
 }
 
 test("upload sets processingStatus to ready or failed", async ({ page }) => {
   await signUpAndLogin(page);
+  const doc = await uploadTestPdf(page);
 
-  const pdfBuffer = fs.readFileSync(pdfPath);
-  const response = await page.request.post("/api/documents/upload", {
-    multipart: {
-      file: {
-        name: "test.pdf",
-        mimeType: "application/pdf",
-        buffer: pdfBuffer,
-      },
-    },
-  });
-
-  expect(response.status()).toBe(201);
-  const body = await response.json();
-  expect(typeof body.document.id).toBe("number");
-  expect(body.document.id).toBeGreaterThan(0);
-  expect(body.document.processingStatus).toMatch(/^(ready|failed)$/);
+  expect(typeof doc.id).toBe("number");
+  expect(doc.id).toBeGreaterThan(0);
+  expect(doc.processingStatus).toMatch(/^(ready|failed)$/);
 });
 
 test("outline sidebar fetches and displays document sections", async ({ page }) => {
   await signUpAndLogin(page);
-  const docId = await uploadTestPdf(page);
+  const { id: docId } = await uploadTestPdf(page);
 
   await page.route("**/api/documents/*/outline", async (route) => {
     await route.fulfill({
@@ -69,16 +64,15 @@ test("outline sidebar fetches and displays document sections", async ({ page }) 
   await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
 
   await page.getByRole("button", { name: "Outline" }).click();
-  await expect(page.getByRole("heading", { name: "Outline" })).toBeVisible();
-  // Use locator scoped to the outline sidebar to avoid strict-mode conflicts with dev error overlay
-  const outlineSidebar = page.locator("div.flex.w-72.flex-col");
+  const outlineSidebar = page.getByTestId("outline-sidebar");
+  await expect(outlineSidebar.getByRole("heading", { name: "Outline" })).toBeVisible();
   await expect(outlineSidebar.getByText("Introduction")).toBeVisible();
   await expect(outlineSidebar.getByText("Page 1")).toBeVisible();
 });
 
 test("explain panel streams explanation for selected text", async ({ page }) => {
   await signUpAndLogin(page);
-  const docId = await uploadTestPdf(page);
+  const { id: docId } = await uploadTestPdf(page);
 
   await page.route("**/api/ai/explain", async (route) => {
     await route.fulfill({
@@ -97,9 +91,10 @@ test("explain panel streams explanation for selected text", async ({ page }) => 
   await page.locator(".react-pdf__Page__textContent").waitFor({ timeout: 10_000 });
 
   await page.getByRole("button", { name: "Explain" }).click();
-  await expect(page.getByRole("heading", { name: "Explain" })).toBeVisible();
+  const conceptsPanel = page.getByTestId("concepts-panel");
+  await expect(conceptsPanel.getByRole("heading", { name: "Explain" })).toBeVisible();
   await expect(
-    page.getByText("Select text in the document to get an explanation.")
+    conceptsPanel.getByText("Select text in the document to get an explanation.")
   ).toBeVisible();
 
   // Simulate text selection: triple-click to select all text in first PDF span
@@ -110,14 +105,14 @@ test("explain panel streams explanation for selected text", async ({ page }) => 
     document.dispatchEvent(new Event("selectionchange"));
   });
 
-  await expect(page.getByText("This is a test explanation.")).toBeVisible({
+  await expect(conceptsPanel.getByText("This is a test explanation.")).toBeVisible({
     timeout: 8_000,
   });
 });
 
 test("chat panel sends question and streams answer with source badges", async ({ page }) => {
   await signUpAndLogin(page);
-  const docId = await uploadTestPdf(page);
+  const { id: docId } = await uploadTestPdf(page);
 
   await page.route("**/api/documents/*/chat", async (route) => {
     await route.fulfill({
@@ -127,7 +122,7 @@ test("chat panel sends question and streams answer with source badges", async ({
         "Cache-Control": "no-cache",
         "X-Accel-Buffering": "no",
       },
-      body: 'data: {"type":"sources","sources":[{"page":1,"content":"context text"}],"conversationId":"test-conv-1"}\n\ndata: {"type":"token","content":"The answer is 42."}\n\ndata: [DONE]\n\n',
+      body: 'data: {"type":"sources","sources":[{"page":1,"content":"context text"}],"conversationId":1}\n\ndata: {"type":"token","content":"The answer is 42."}\n\ndata: [DONE]\n\n',
     });
   });
 
