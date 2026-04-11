@@ -7,93 +7,102 @@ export interface ChatMessage {
   content: string;
 }
 
-export function useChat(documentId: number, processingServiceUrl: string = "http://localhost:8000") {
+export interface ChatSource {
+  page: number;
+  relevance: number;
+}
+
+export function useChat(documentId: number) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sources, setSources] = useState<ChatSource[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<number | undefined>();
 
-  const sendMessage = useCallback(async (
-    question: string,
-    apiKey: string,
-    viewportContext: ViewportContext,
-    model: string = "openai/gpt-4o-mini",
-  ) => {
-    if (!question.trim() || streaming) return;
+  const sendMessage = useCallback(
+    async (question: string, viewportContext: ViewportContext) => {
+      if (!question.trim() || streaming) return;
 
-    const userMsg: ChatMessage = { role: "user", content: question };
-    setMessages((prev) => [...prev, userMsg]);
-    setStreaming(true);
-    setError(null);
+      setMessages((prev) => [...prev, { role: "user", content: question }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+      setSources([]);
+      setStreaming(true);
+      setError(null);
 
-    // Placeholder for streaming assistant message
-    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+      try {
+        const response = await fetch(`/api/documents/${documentId}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question,
+            viewportContext,
+            history: messages.slice(-10),
+            conversationId,
+          }),
+        });
 
-    try {
-      const response = await fetch(`${processingServiceUrl}/rag/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          document_id: documentId,
-          question,
-          conversation_history: messages,
-          viewport_context: viewportContext,
-          api_key: apiKey,
-          model,
-        }),
-      });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `HTTP ${response.status}`);
+        }
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-      const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let streamDone = false;
+        outer: while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop()!;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") { streamDone = true; break; }
+          for (const part of parts) {
+            if (!part.startsWith("data: ")) continue;
+            const data = part.slice(6).trim();
+            if (data === "[DONE]") break outer;
             try {
-              const parsed = JSON.parse(data);
-              const delta = parsed?.choices?.[0]?.delta?.content ?? "";
-              if (delta) {
+              const parsed = JSON.parse(data) as {
+                type: string;
+                content?: string;
+                sources?: ChatSource[];
+                message?: string;
+              };
+              if (parsed.type === "sources" && parsed.sources) {
+                setSources(parsed.sources);
+              } else if (parsed.type === "token" && parsed.content) {
                 setMessages((prev) => {
                   const updated = [...prev];
                   updated[updated.length - 1] = {
                     role: "assistant",
-                    content: (updated[updated.length - 1].content) + delta,
+                    content: updated[updated.length - 1].content + parsed.content,
                   };
                   return updated;
                 });
+              } else if (parsed.type === "error") {
+                setError(parsed.message ?? "Streaming error");
               }
             } catch {
               // skip malformed chunks
             }
           }
         }
-        if (streamDone) break;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to send message");
+        setMessages((prev) => prev.slice(0, -1));
+      } finally {
+        setStreaming(false);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send message");
-      // Remove the empty assistant placeholder on error
-      setMessages((prev) => prev.slice(0, -1));
-    } finally {
-      setStreaming(false);
-    }
-  }, [documentId, messages, processingServiceUrl, streaming]);
+    },
+    [documentId, messages, streaming, conversationId]
+  );
 
   const clearMessages = useCallback(() => {
     setMessages([]);
+    setSources([]);
     setError(null);
+    setConversationId(undefined);
   }, []);
 
-  return { messages, streaming, error, sendMessage, clearMessages };
+  return { messages, sources, streaming, error, sendMessage, clearMessages };
 }

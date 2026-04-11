@@ -44,7 +44,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [chatOpen, setChatOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [conceptsOpen, setConceptsOpen] = useState(false);
-  const [apiKey, setApiKey] = useState("");
   const pdfScrollRef = useRef<HTMLDivElement>(null);
   const { selection, clearSelection } = useTextSelection();
   const currentPage = useReaderState((s) => s.currentPage);
@@ -79,18 +78,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
     const timer = setTimeout(() => setSaveError(null), 3000);
     return () => clearTimeout(timer);
   }, [saveError]);
-
-  useEffect(() => {
-    fetch("/api/settings/api-keys")
-      .then((res) => res.json())
-      .then((data) => {
-        const llmKey = data.keys?.find(
-          (k: { providerType: string }) => k.providerType === "llm"
-        );
-        if (llmKey) setApiKey(llmKey.key);
-      })
-      .catch(() => {});
-  }, []);
 
   return (
     <div className="flex h-screen flex-col">
@@ -139,7 +126,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
           documentId={documentId}
           open={chatOpen}
           scrollContainerRef={pdfScrollRef}
-          apiKey={apiKey}
         />
         <OutlineSidebar
           documentId={documentId}

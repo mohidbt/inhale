@@ -10,13 +10,12 @@ interface ChatPanelProps {
   documentId: number;
   open: boolean;
   scrollContainerRef: React.RefObject<HTMLElement | null>;
-  apiKey?: string;
 }
 
-export function ChatPanel({ documentId, open, scrollContainerRef, apiKey = "" }: ChatPanelProps) {
+export function ChatPanel({ documentId, open, scrollContainerRef }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const viewportRef = useViewportTracking(scrollContainerRef);
-  const { messages, streaming, error, sendMessage } = useChat(documentId);
+  const { messages, sources, streaming, error, sendMessage } = useChat(documentId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,7 +23,7 @@ export function ChatPanel({ documentId, open, scrollContainerRef, apiKey = "" }:
     if (!input.trim() || streaming) return;
     const q = input;
     setInput("");
-    await sendMessage(q, apiKey, viewportRef.current ?? { page: 1, scrollPct: 0 });
+    await sendMessage(q, viewportRef.current ?? { page: 1, scrollPct: 0 });
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -49,6 +48,18 @@ export function ChatPanel({ documentId, open, scrollContainerRef, apiKey = "" }:
         ))}
         <div ref={messagesEndRef} />
       </div>
+      {sources.length > 0 && (
+        <div className="px-3 py-2 border-t flex flex-wrap gap-1">
+          {sources.map((s, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+            >
+              p.{s.page}
+            </span>
+          ))}
+        </div>
+      )}
       {error && <p className="px-3 py-1 text-xs text-red-500">{error}</p>}
       <form onSubmit={handleSubmit} className="p-3 border-t flex gap-2">
         <Input
