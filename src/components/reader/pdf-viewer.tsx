@@ -64,9 +64,19 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const handler = () => setScrollTop(el.scrollTop);
+    let raf = 0;
+    const handler = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        setScrollTop(el.scrollTop);
+        raf = 0;
+      });
+    };
     el.addEventListener("scroll", handler, { passive: true });
-    return () => el.removeEventListener("scroll", handler);
+    return () => {
+      el.removeEventListener("scroll", handler);
+      cancelAnimationFrame(raf);
+    };
   }, [containerRef]);
 
   // Scroll to an explicitly requested page (Prev/Next buttons, outline clicks, etc.)
