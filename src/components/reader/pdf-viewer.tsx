@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Document, pdfjs } from "react-pdf";
-import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { PdfPage } from "./pdf-page";
 import { useReaderState } from "@/hooks/use-reader-state";
