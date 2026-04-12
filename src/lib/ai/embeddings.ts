@@ -5,6 +5,13 @@ const EMBED_URL = "https://openrouter.ai/api/v1/embeddings";
 
 export async function embedTexts(apiKey: string, inputs: string[]): Promise<number[][]> {
   if (inputs.length === 0) return [];
+
+  // Stub for E2E tests — exercises full DB insert path (including vector column)
+  // but skips the real OpenRouter network call.
+  if (process.env.INHALE_STUB_EMBEDDINGS === "1") {
+    return inputs.map(() => Array(1536).fill(0.01));
+  }
+
   const res = await fetch(EMBED_URL, {
     method: "POST",
     headers: {

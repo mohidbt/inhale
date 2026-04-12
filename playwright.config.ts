@@ -23,5 +23,9 @@ export default defineConfig({
     url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 30_000,
+    env: {
+      ...process.env,
+      INHALE_STUB_EMBEDDINGS: "1",
+    },
   },
 });
