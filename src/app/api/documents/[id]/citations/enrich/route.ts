@@ -56,27 +56,27 @@ export async function POST(
     // Enrich references via Semantic Scholar
     const enriched = await enrichReferences(refs);
 
-    // Update each matched reference in the database
-    let enrichedCount = 0;
-    for (const [refId, metadata] of enriched) {
-      await db
-        .update(documentReferences)
-        .set({
-          semanticScholarId: metadata.semanticScholarId,
-          title: metadata.title,
-          authors: metadata.authors || null,
-          year: metadata.year,
-          doi: metadata.doi,
-          url: metadata.url,
-          abstract: metadata.abstract,
-          venue: metadata.venue,
-          citationCount: metadata.citationCount,
-        })
-        .where(eq(documentReferences.id, refId));
-      enrichedCount++;
-    }
+    // Update each matched reference in parallel (each targets a distinct id)
+    await Promise.all(
+      Array.from(enriched).map(([refId, metadata]) =>
+        db
+          .update(documentReferences)
+          .set({
+            semanticScholarId: metadata.semanticScholarId,
+            title: metadata.title,
+            authors: metadata.authors || null,
+            year: metadata.year,
+            doi: metadata.doi,
+            url: metadata.url,
+            abstract: metadata.abstract,
+            venue: metadata.venue,
+            citationCount: metadata.citationCount,
+          })
+          .where(eq(documentReferences.id, refId))
+      )
+    );
 
-    return NextResponse.json({ enriched: enrichedCount, total });
+    return NextResponse.json({ enriched: enriched.size, total });
   } catch (err) {
     console.error("[citations/enrich] failed for document", documentId, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

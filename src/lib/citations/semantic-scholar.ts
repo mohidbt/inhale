@@ -48,7 +48,8 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithRetry(url: string): Promise<RawPaper | null> {
+/** Fetch with one-shot 429 retry. Returns null on 404 or persistent failure. */
+async function fetchRaw(url: string): Promise<Response | null> {
   let response = await fetch(url);
 
   if (response.status === 429) {
@@ -59,8 +60,13 @@ async function fetchWithRetry(url: string): Promise<RawPaper | null> {
   if (response.status === 404) return null;
   if (!response.ok) return null;
 
-  const data = await response.json();
-  return data as RawPaper;
+  return response;
+}
+
+async function fetchWithRetry(url: string): Promise<RawPaper | null> {
+  const response = await fetchRaw(url);
+  if (!response) return null;
+  return (await response.json()) as RawPaper;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,15 +82,8 @@ export async function searchPaperByTitle(title: string): Promise<PaperMetadata |
   const encoded = encodeURIComponent(title).replace(/%20/g, "+");
   const url = `${BASE_URL}/search?query=${encoded}&limit=1&fields=${FIELDS}`;
 
-  let response = await fetch(url);
-
-  if (response.status === 429) {
-    await delay(RETRY_DELAY_MS);
-    response = await fetch(url);
-  }
-
-  if (response.status === 404) return null;
-  if (!response.ok) return null;
+  const response = await fetchRaw(url);
+  if (!response) return null;
 
   const data = (await response.json()) as { data: RawPaper[] };
   if (!data.data || data.data.length === 0) return null;
@@ -127,11 +126,16 @@ export async function enrichReferences(
 ): Promise<Map<number, PaperMetadata>> {
   const result = new Map<number, PaperMetadata>();
 
+  let isFirst = true;
   for (const ref of refs) {
     const hasDoi = ref.doi && ref.doi.trim() !== "";
     const hasTitle = ref.title && ref.title.trim() !== "";
 
     if (!hasDoi && !hasTitle) continue;
+
+    // Delay between requests to stay within rate limits — only between refs, not after the last
+    if (!isFirst) await delay(ENRICH_DELAY_MS);
+    isFirst = false;
 
     let metadata: PaperMetadata | null = null;
 
@@ -146,9 +150,6 @@ export async function enrichReferences(
     if (metadata) {
       result.set(ref.id, metadata);
     }
-
-    // Delay between requests to stay within rate limits
-    await delay(ENRICH_DELAY_MS);
   }
 
   return result;
