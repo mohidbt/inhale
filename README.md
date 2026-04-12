@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Inhale
 
-## Getting Started
+AI-enhanced interactive PDF reader for scientific papers.
 
-First, run the development server:
+## Prerequisites
+
+- Node.js 20+
+- Docker Desktop (for local Postgres with pgvector)
+
+## Quick Start
 
 ```bash
+# 1. Clone and install
+git clone <repo-url> && cd inhale
+npm install
+
+# 2. Configure environment
+cp .env.example .env.local
+# Edit .env.local — see Environment Variables below
+
+# 3. Start Postgres
+docker compose up -d postgres
+
+# 4. Run migrations
+npm run db:migrate
+
+# 5. Start dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | Yes | Postgres connection string |
+| `BETTER_AUTH_SECRET` | Yes | Random secret for Better Auth session signing |
+| `ENCRYPTION_KEY` | Yes | 64 hex chars (32 bytes) — AES-256-GCM key for stored API keys |
+| `UPLOAD_DIR` | No | Directory for uploaded PDFs (default: `uploads/`) |
 
-## Learn More
+Generate secrets:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# BETTER_AUTH_SECRET
+openssl rand -base64 32
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# ENCRYPTION_KEY (must be exactly 64 hex chars)
+openssl rand -hex 32
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Database
 
-## Deploy on Vercel
+Docker is the only supported local dev path. Running `docker compose up -d postgres` boots `pgvector/pgvector:pg16` with the `vector` extension created automatically via `docker/initdb/01-extensions.sql`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+See [docs/migrations.md](docs/migrations.md) for the full migration workflow.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Scripts
+
+| Script | Description |
+|---|---|
+| `npm run dev` | Start Next.js dev server |
+| `npm run build` | Production build |
+| `npm run start` | Start production server |
+| `npm run lint` | Run ESLint |
+| `npm run db:generate` | Generate Drizzle migrations from schema changes |
+| `npm run db:migrate` | Apply pending migrations |
+| `npm run db:studio` | Open Drizzle Studio (database browser) |
+| `npm run db:check` | Verify migration snapshot matches schema |
