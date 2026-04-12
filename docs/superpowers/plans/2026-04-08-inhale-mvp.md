@@ -3092,12 +3092,12 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 **DB:** `document_references`, `library_references`, `kept_citations` tables
 
 **Tasks:**
-- [ ] Task 18: Create Drizzle schemas for references, library refs, kept citations
-- [ ] Task 19: Citation extraction task (parse `[n]` markers from text layer, create DocumentReference rows)
-- [ ] Task 20: Semantic Scholar API integration service (fetch metadata by title/DOI)
-- [ ] Task 21: Citation card UI component (click [n] → popover with title, authors, abstract, actions)
-- [ ] Task 22: "Keep It" and "Save to Library" API routes + UI
-- [ ] Task 23: Library references page at `/library/references`
+- [x] Task 18: Create Drizzle schemas for references, library refs, kept citations
+- [x] Task 19: Citation extraction task (parse `[n]` markers from text layer, create DocumentReference rows)
+- [x] Task 20: Semantic Scholar API integration service (fetch metadata by title/DOI)
+- [x] Task 21: Citation card UI component (click [n] → popover with title, authors, abstract, actions)
+- [x] Task 22: "Keep It" and "Save to Library" API routes + UI
+- [x] Task 23: Library references page at `/library/references`
 
 ## Phase 2.1 — Auto-Highlight
 
