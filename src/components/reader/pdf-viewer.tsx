@@ -27,6 +27,7 @@ interface PdfViewerProps {
 
 export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
   const [containerWidth, setContainerWidth] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
   const [loadError, setLoadError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
   const setTotalPages = useReaderState((s) => s.setTotalPages);
@@ -37,11 +38,7 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
   const zoom = useReaderState((s) => s.zoom);
   const internalRef = useRef<HTMLDivElement>(null);
   const containerRef = externalRef ?? internalRef;
-
-  // Track which pages are currently visible (by IntersectionObserver on placeholders)
-  const [visiblePages, setVisiblePages] = useState<Set<number>>(
-    () => new Set([1])
-  );
+  const [scrollTop, setScrollTop] = useState(0);
 
   const onDocumentLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
@@ -51,15 +48,25 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
     [setTotalPages]
   );
 
-  // Measure container width
+  // Measure container width and height
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
       setContainerWidth(entry.contentRect.width - 48);
+      setContainerHeight(entry.contentRect.height);
     });
     ro.observe(el);
     return () => ro.disconnect();
+  }, [containerRef]);
+
+  // Track scroll position for virtualization
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = () => setScrollTop(el.scrollTop);
+    el.addEventListener("scroll", handler, { passive: true });
+    return () => el.removeEventListener("scroll", handler);
   }, [containerRef]);
 
   // Scroll to an explicitly requested page (Prev/Next buttons, outline clicks, etc.)
@@ -80,41 +87,13 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
     setScrollTargetPage(null);
   }, [scrollTargetPage, containerRef, setScrollTargetPage]);
 
-  // Observe all page slots (both real pages and placeholders) to determine
-  // which pages are visible, and also track the current page for the toolbar.
+  // Track current page via IntersectionObserver (for toolbar display only)
   useEffect(() => {
     const el = containerRef.current;
     if (!el || totalPages <= 0) return;
-    const pageEls = el.querySelectorAll("[data-page-number]");
-    if (pageEls.length === 0) return;
 
     const io = new IntersectionObserver(
       (entries) => {
-        // Update visible pages set
-        setVisiblePages((prev) => {
-          const next = new Set(prev);
-          for (const entry of entries) {
-            const n = Number(
-              (entry.target as HTMLElement).dataset.pageNumber
-            );
-            if (!Number.isFinite(n)) continue;
-            if (entry.isIntersecting) {
-              next.add(n);
-            } else {
-              next.delete(n);
-            }
-          }
-          // Avoid unnecessary re-render if nothing changed
-          if (
-            next.size === prev.size &&
-            [...next].every((p) => prev.has(p))
-          ) {
-            return prev;
-          }
-          return next;
-        });
-
-        // Track current page (most visible)
         let bestRatio = 0;
         let bestPage = 0;
         for (const entry of entries) {
@@ -128,26 +107,40 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
         }
         if (bestPage > 0) setCurrentPage(bestPage);
       },
-      { root: el, threshold: [0, 0.25, 0.5, 0.75] }
+      { root: el, threshold: [0.25, 0.5, 0.75] }
     );
-    pageEls.forEach((pageEl) => io.observe(pageEl));
-    return () => io.disconnect();
+
+    // Observe direct children with data-page-number (our wrapper divs only)
+    const observe = () => {
+      io.disconnect();
+      const pageEls = el.querySelectorAll(":scope > div > [data-page-number]");
+      pageEls.forEach((pageEl) => io.observe(pageEl));
+    };
+
+    // Re-observe when DOM children change (placeholder ↔ PdfPage swaps)
+    const mo = new MutationObserver(observe);
+    mo.observe(el.querySelector(":scope > div") ?? el, {
+      childList: true,
+      subtree: false,
+    });
+    observe();
+
+    return () => {
+      io.disconnect();
+      mo.disconnect();
+    };
   }, [totalPages, containerRef, setCurrentPage]);
 
-  // Compute which pages should be fully rendered (visible + buffer)
-  const renderedPages = new Set<number>();
-  for (const p of visiblePages) {
-    for (
-      let i = Math.max(1, p - BUFFER_PAGES);
-      i <= Math.min(totalPages, p + BUFFER_PAGES);
-      i++
-    ) {
-      renderedPages.add(i);
-    }
-  }
-
-  /** Estimated height of a page placeholder at current zoom */
+  // Compute which pages to render based on scroll position
   const estimatedHeight = containerWidth * zoom * A4_RATIO + PAGE_MARGIN;
+  const firstVisible = estimatedHeight > 0
+    ? Math.max(1, Math.floor(scrollTop / estimatedHeight) + 1)
+    : 1;
+  const visibleCount = estimatedHeight > 0 && containerHeight > 0
+    ? Math.ceil(containerHeight / estimatedHeight) + 1
+    : 3;
+  const renderStart = Math.max(1, firstVisible - BUFFER_PAGES);
+  const renderEnd = Math.min(totalPages, firstVisible + visibleCount - 1 + BUFFER_PAGES);
 
   return (
     <div ref={containerRef} className="flex-1 overflow-auto bg-muted/30 p-6">
@@ -171,7 +164,7 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
           >
             {Array.from({ length: totalPages }, (_, i) => {
               const pageNumber = i + 1;
-              if (renderedPages.has(pageNumber)) {
+              if (pageNumber >= renderStart && pageNumber <= renderEnd) {
                 return (
                   <PdfPage
                     key={pageNumber}
