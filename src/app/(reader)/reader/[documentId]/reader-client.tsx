@@ -10,8 +10,10 @@ import { CommentInput } from "@/components/reader/comment-input";
 import { ChatPanel } from "@/components/reader/chat-panel";
 import { OutlineSidebar } from "@/components/reader/outline-sidebar";
 import { ConceptsPanel } from "@/components/reader/concepts-panel";
+import { CitationCard, type DocumentReference } from "@/components/reader/citation-card";
 import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
+import { useCitationClick } from "@/hooks/use-citation-click";
 
 const PdfViewer = dynamic(
   () => import("@/components/reader/pdf-viewer").then((m) => ({ default: m.PdfViewer })),
@@ -47,6 +49,20 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const pdfScrollRef = useRef<HTMLDivElement>(null);
   const { selection, clearSelection } = useTextSelection();
   const currentPage = useReaderState((s) => s.currentPage);
+
+  // Citations
+  const [citations, setCitations] = useState<DocumentReference[]>([]);
+  const { activeCitation, clickPosition, dismiss: dismissCitation } = useCitationClick(
+    pdfScrollRef,
+    citations
+  );
+
+  useEffect(() => {
+    fetch(`/api/documents/${documentId}/citations`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: { citations: DocumentReference[] }) => setCitations(data.citations))
+      .catch(() => {/* non-fatal: citations just won't show */});
+  }, [documentId]);
 
   const handleHighlight = useCallback(
     async (color: HighlightColor) => {
@@ -141,6 +157,13 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             rect={selection.rect}
             onHighlight={handleHighlight}
             onDismiss={clearSelection}
+          />
+        )}
+        {activeCitation && clickPosition && (
+          <CitationCard
+            citation={activeCitation}
+            rect={clickPosition}
+            onDismiss={dismissCitation}
           />
         )}
       </div>
