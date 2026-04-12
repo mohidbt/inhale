@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, type RefObject } from "react";
 import { findCitationMarkerAtOffset } from "@/lib/citations/click-detection";
+import { findCitationFromAnchor } from "@/lib/citations/find-citation-from-anchor";
 import type { CitationWithStatus } from "@/components/reader/citation-card";
 
 interface CitationClickResult {
@@ -64,9 +65,17 @@ export function useCitationClick(
         }
       }
 
-      if (markerIndex === null) return;
+      // Fallback 2: pdfjs may render an internal link annotation over [n].
+      // Walk up to the enclosing <a> and match its bare digit text.
+      let citation = citations.find((c) => c.markerIndex === markerIndex);
+      if (!citation) {
+        const fromAnchor = findCitationFromAnchor(e.target as Element, citations);
+        if (fromAnchor) {
+          e.preventDefault();
+          citation = fromAnchor;
+        }
+      }
 
-      const citation = citations.find((c) => c.markerIndex === markerIndex);
       if (!citation) return;
 
       // Position the card just below + slightly right of the click, avoiding bottom clipping.
