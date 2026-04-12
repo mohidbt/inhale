@@ -123,9 +123,13 @@ describe("libraryReferences schema", () => {
     expect(idxNames).toContain("library_references_user_id_idx");
   });
 
-  it("has composite index on user_id + doi", () => {
+  it("has partial unique index on user_id + doi (race-free DOI dedup)", () => {
     const idxNames = config.indexes.map((i) => i.config.name);
-    expect(idxNames).toContain("library_references_user_doi_idx");
+    expect(idxNames).toContain("library_references_user_doi_unique_idx");
+    const uniqueIdx = config.indexes.find(
+      (i) => i.config.name === "library_references_user_doi_unique_idx"
+    );
+    expect(uniqueIdx?.config.unique).toBe(true);
   });
 
   it("user_id has foreign key to user", () => {

@@ -49,75 +49,61 @@ export async function POST(
       return NextResponse.json({ error: "Citation not found" }, { status: 404 });
     }
 
-    // Find or create library_reference
+    // Find or create library_reference.
+    // With a DOI we can use ON CONFLICT against the partial unique index
+    // (userId, doi) WHERE doi IS NOT NULL — race-free under concurrent saves.
+    // Without a DOI we insert a new row (dedup isn't meaningful without a DOI).
     let libraryReferenceId: number;
+    const payload = buildLibraryReference(session.user.id, ref);
 
-    // Try to reuse existing library_reference by DOI if available
     if (ref.doi) {
-      const [existing] = await db
-        .select({ id: libraryReferences.id })
-        .from(libraryReferences)
-        .where(
-          and(
-            eq(libraryReferences.userId, session.user.id),
-            eq(libraryReferences.doi, ref.doi)
-          )
-        )
-        .limit(1);
-
-      if (existing) {
-        libraryReferenceId = existing.id;
-      } else {
-        const payload = buildLibraryReference(session.user.id, ref);
-        const [inserted] = await db
-          .insert(libraryReferences)
-          .values(payload)
-          .returning({ id: libraryReferences.id });
-        libraryReferenceId = inserted.id;
-      }
+      const [row] = await db
+        .insert(libraryReferences)
+        .values(payload)
+        .onConflictDoUpdate({
+          target: [libraryReferences.userId, libraryReferences.doi],
+          set: {
+            // Refresh metadata in case the citation was re-enriched since the
+            // original save. updatedAt is bumped automatically by $onUpdate.
+            title: payload.title,
+            authors: payload.authors,
+            year: payload.year,
+            url: payload.url,
+            semanticScholarId: payload.semanticScholarId,
+            abstract: payload.abstract,
+            venue: payload.venue,
+            citationCount: payload.citationCount,
+          },
+        })
+        .returning({ id: libraryReferences.id });
+      libraryReferenceId = row.id;
     } else {
-      const payload = buildLibraryReference(session.user.id, ref);
-      const [inserted] = await db
+      const [row] = await db
         .insert(libraryReferences)
         .values(payload)
         .returning({ id: libraryReferences.id });
-      libraryReferenceId = inserted.id;
+      libraryReferenceId = row.id;
     }
 
-    // Upsert kept_citations — update libraryReferenceId if row exists, else insert
-    const [existingKept] = await db
-      .select({ id: keptCitations.id })
-      .from(keptCitations)
-      .where(
-        and(
-          eq(keptCitations.userId, session.user.id),
-          eq(keptCitations.documentReferenceId, documentReferenceId)
-        )
-      )
-      .limit(1);
+    // Upsert kept_citations against the (userId, documentReferenceId) unique
+    // constraint — race-free and sets libraryReferenceId whether this is the
+    // first save or an upgrade from a prior Keep (libraryReferenceId: null).
+    const [kept] = await db
+      .insert(keptCitations)
+      .values({
+        userId: session.user.id,
+        documentReferenceId,
+        libraryReferenceId,
+      })
+      .onConflictDoUpdate({
+        target: [keptCitations.userId, keptCitations.documentReferenceId],
+        set: { libraryReferenceId },
+      })
+      .returning({ id: keptCitations.id });
 
-    let keptId: number;
-
-    if (existingKept) {
-      await db
-        .update(keptCitations)
-        .set({ libraryReferenceId })
-        .where(eq(keptCitations.id, existingKept.id));
-      keptId = existingKept.id;
-    } else {
-      const [inserted] = await db
-        .insert(keptCitations)
-        .values({
-          userId: session.user.id,
-          documentReferenceId,
-          libraryReferenceId,
-        })
-        .returning({ id: keptCitations.id });
-      keptId = inserted.id;
-    }
-
-    return NextResponse.json({ libraryReferenceId, keptId });
-  } catch {
+    return NextResponse.json({ libraryReferenceId, keptId: kept.id });
+  } catch (err) {
+    console.error("[citations/save] failed for document", documentId, "ref", documentReferenceId, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

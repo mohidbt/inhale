@@ -53,7 +53,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
 
   // Citations
   const [citations, setCitations] = useState<CitationWithStatus[]>([]);
-  const [citationsRefreshKey, setCitationsRefreshKey] = useState(0);
+  const pendingCitationIds = useRef<Set<number>>(new Set());
   const { activeCitation, clickPosition, dismiss: dismissCitation } = useCitationClick(
     pdfScrollRef,
     citations
@@ -64,33 +64,60 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: { citations: CitationWithStatus[] }) => setCitations(data.citations))
       .catch(() => {/* non-fatal: citations just won't show */});
-  }, [documentId, citationsRefreshKey]);
+  }, [documentId]);
+
+  const patchCitation = useCallback(
+    (citationId: number, patch: Partial<CitationWithStatus>) => {
+      setCitations((prev) =>
+        prev.map((c) => (c.id === citationId ? { ...c, ...patch } : c))
+      );
+    },
+    []
+  );
 
   const handleKeep = useCallback(async (citationId: number) => {
-    const res = await fetch(
-      `/api/documents/${documentId}/citations/${citationId}/keep`,
-      { method: "POST" }
-    );
-    if (res.ok) {
-      toast.success("Kept");
-      setCitationsRefreshKey((k) => k + 1);
-    } else {
-      toast.error("Failed to keep citation");
+    // Guard against double-submit from rapid clicks
+    if (pendingCitationIds.current.has(citationId)) return;
+    pendingCitationIds.current.add(citationId);
+    try {
+      const res = await fetch(
+        `/api/documents/${documentId}/citations/${citationId}/keep`,
+        { method: "POST" }
+      );
+      if (res.ok) {
+        const { keptId } = (await res.json()) as { keptId: number };
+        patchCitation(citationId, { keptId });
+        toast.success("Kept");
+      } else {
+        toast.error("Failed to keep citation");
+      }
+    } finally {
+      pendingCitationIds.current.delete(citationId);
     }
-  }, [documentId]);
+  }, [documentId, patchCitation]);
 
   const handleSaveToLibrary = useCallback(async (citationId: number) => {
-    const res = await fetch(
-      `/api/documents/${documentId}/citations/${citationId}/save`,
-      { method: "POST" }
-    );
-    if (res.ok) {
-      toast.success("Saved to library");
-      setCitationsRefreshKey((k) => k + 1);
-    } else {
-      toast.error("Failed to save to library");
+    if (pendingCitationIds.current.has(citationId)) return;
+    pendingCitationIds.current.add(citationId);
+    try {
+      const res = await fetch(
+        `/api/documents/${documentId}/citations/${citationId}/save`,
+        { method: "POST" }
+      );
+      if (res.ok) {
+        const { keptId, libraryReferenceId } = (await res.json()) as {
+          keptId: number;
+          libraryReferenceId: number;
+        };
+        patchCitation(citationId, { keptId, libraryReferenceId });
+        toast.success("Saved to library");
+      } else {
+        toast.error("Failed to save to library");
+      }
+    } finally {
+      pendingCitationIds.current.delete(citationId);
     }
-  }, [documentId]);
+  }, [documentId, patchCitation]);
 
   const handleHighlight = useCallback(
     async (color: HighlightColor) => {

@@ -153,7 +153,7 @@ export function CitationCard({
           size="sm"
           variant={citation.keptId ? "secondary" : "default"}
           className="flex-1 text-xs"
-          onClick={citation.keptId ? undefined : onKeep}
+          onClick={onKeep}
           disabled={!!citation.keptId}
           aria-label={citation.keptId ? "Already kept" : "Keep It"}
         >
@@ -163,7 +163,7 @@ export function CitationCard({
           size="sm"
           variant={citation.libraryReferenceId ? "secondary" : "outline"}
           className="flex-1 text-xs"
-          onClick={citation.libraryReferenceId ? undefined : onSaveToLibrary}
+          onClick={onSaveToLibrary}
           disabled={!!citation.libraryReferenceId}
           aria-label={citation.libraryReferenceId ? "Already in library" : "Save to Library"}
         >

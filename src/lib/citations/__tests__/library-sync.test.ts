@@ -43,6 +43,18 @@ describe("buildLibraryReference", () => {
     expect(result.title).toBe("[42]");
   });
 
+  it("treats empty-string title as absent and falls back to rawText", () => {
+    const ref = makeRef({ title: "", rawText: "Raw text fallback", markerText: "[1]" });
+    const result = buildLibraryReference("user-1", ref);
+    expect(result.title).toBe("Raw text fallback");
+  });
+
+  it("treats whitespace-only rawText as absent and falls back to markerText", () => {
+    const ref = makeRef({ title: null, rawText: "   ", markerText: "[7]" });
+    const result = buildLibraryReference("user-1", ref);
+    expect(result.title).toBe("[7]");
+  });
+
   it("passes through all other fields", () => {
     const ref = makeRef({
       title: "A Paper",

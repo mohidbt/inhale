@@ -48,7 +48,22 @@ export async function POST(
       return NextResponse.json({ error: "Citation not found" }, { status: 404 });
     }
 
-    // Check if already kept (for alreadyKept flag)
+    // Race-free idempotent insert: ON CONFLICT DO NOTHING returns the new
+    // row, or no rows if it already existed. On conflict we re-fetch.
+    const [inserted] = await db
+      .insert(keptCitations)
+      .values({
+        userId: session.user.id,
+        documentReferenceId,
+        libraryReferenceId: null,
+      })
+      .onConflictDoNothing()
+      .returning({ id: keptCitations.id });
+
+    if (inserted) {
+      return NextResponse.json({ keptId: inserted.id, alreadyKept: false });
+    }
+
     const [existing] = await db
       .select({ id: keptCitations.id })
       .from(keptCitations)
@@ -60,23 +75,9 @@ export async function POST(
       )
       .limit(1);
 
-    if (existing) {
-      return NextResponse.json({ keptId: existing.id, alreadyKept: true });
-    }
-
-    // Insert — onConflictDoNothing for idempotency
-    const [inserted] = await db
-      .insert(keptCitations)
-      .values({
-        userId: session.user.id,
-        documentReferenceId,
-        libraryReferenceId: null,
-      })
-      .onConflictDoNothing()
-      .returning({ id: keptCitations.id });
-
-    return NextResponse.json({ keptId: inserted.id, alreadyKept: false });
-  } catch {
+    return NextResponse.json({ keptId: existing.id, alreadyKept: true });
+  } catch (err) {
+    console.error("[citations/keep] failed for document", documentId, "ref", documentReferenceId, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

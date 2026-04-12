@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, serial, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, serial, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { user } from "./auth";
 
 export const libraryReferences = pgTable("library_references", {
@@ -23,5 +24,9 @@ export const libraryReferences = pgTable("library_references", {
     .$onUpdate(() => new Date()),
 }, (table) => [
   index("library_references_user_id_idx").on(table.userId),
-  index("library_references_user_doi_idx").on(table.userId, table.doi), // not unique — doi is nullable; dedup is handled in application layer
+  // Partial unique index — enforces per-user DOI uniqueness only for rows with a DOI.
+  // Enables race-free ON CONFLICT upsert in save route; rows without a DOI remain duplicable.
+  uniqueIndex("library_references_user_doi_unique_idx")
+    .on(table.userId, table.doi)
+    .where(sql`${table.doi} IS NOT NULL`),
 ]);
