@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface TextSelection {
   text: string;
@@ -12,6 +12,7 @@ interface TextSelection {
 
 export function useTextSelection() {
   const [selection, setSelection] = useState<TextSelection | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   const handleSelectionChange = useCallback(() => {
     const sel = window.getSelection();
@@ -39,8 +40,16 @@ export function useTextSelection() {
   }, []);
 
   useEffect(() => {
-    document.addEventListener("selectionchange", handleSelectionChange);
-    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+    const debouncedHandler = () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(handleSelectionChange, 50);
+    };
+
+    document.addEventListener("selectionchange", debouncedHandler);
+    return () => {
+      document.removeEventListener("selectionchange", debouncedHandler);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [handleSelectionChange]);
 
   const clearSelection = useCallback(() => {

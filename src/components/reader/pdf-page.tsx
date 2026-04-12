@@ -1,16 +1,19 @@
 "use client";
 
+import { memo } from "react";
 import { Page } from "react-pdf";
-import { useReaderState } from "@/hooks/use-reader-state";
 
 interface PdfPageProps {
   pageNumber: number;
   width: number;
+  zoom: number;
 }
 
-export function PdfPage({ pageNumber, width }: PdfPageProps) {
-  const zoom = useReaderState((s) => s.zoom);
-
+export const PdfPage = memo(function PdfPage({
+  pageNumber,
+  width,
+  zoom,
+}: PdfPageProps) {
   return (
     <div data-page-number={pageNumber} className="mb-4 shadow-md">
       <Page
@@ -21,4 +24,4 @@ export function PdfPage({ pageNumber, width }: PdfPageProps) {
       />
     </div>
   );
-}
+});

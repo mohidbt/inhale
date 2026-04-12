@@ -56,10 +56,10 @@ export function ConceptsPanel({ selectedText, open }: ConceptsPanelProps) {
           buffer = parts.pop()!; // keep incomplete last frame
           for (const part of parts) {
             if (!part.startsWith("data: ")) continue;
-            const data = part.slice(6).trim();
-            if (data === "[DONE]") break;
-            if (data.startsWith("[ERROR]")) {
-              setError(data.slice(7).trim() || "Explanation failed");
+            const data = part.slice(6);
+            if (data.trim() === "[DONE]") break;
+            if (data.trim().startsWith("[ERROR]")) {
+              setError(data.trim().slice(7).trim() || "Explanation failed");
               break;
             }
             setExplanation((prev) => prev + data);
@@ -84,7 +84,7 @@ export function ConceptsPanel({ selectedText, open }: ConceptsPanelProps) {
       <div className="flex items-center justify-between border-b p-4">
         <h2 className="text-sm font-semibold">Explain</h2>
       </div>
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4">
         {!selectedText.trim() && (
           <p className="text-xs text-muted-foreground">
             Select text in the document to get an explanation.
@@ -95,7 +95,7 @@ export function ConceptsPanel({ selectedText, open }: ConceptsPanelProps) {
         )}
         {error && <p className="text-xs text-destructive">{error}</p>}
         {explanation && (
-          <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
+          <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap break-words">
             {explanation}
           </p>
         )}
