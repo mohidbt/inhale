@@ -2,7 +2,6 @@
 
 import { memo } from "react";
 import { Page } from "react-pdf";
-import { InlineTextLayer } from "./inline-text-layer";
 
 interface PdfPageProps {
   pageNumber: number;
@@ -16,15 +15,13 @@ export const PdfPage = memo(function PdfPage({
   zoom,
 }: PdfPageProps) {
   return (
-    <div data-page-number={pageNumber} className="mb-4 shadow-md relative">
+    <div data-page-number={pageNumber} className="mb-4 shadow-md">
       <Page
         pageNumber={pageNumber}
         width={width * zoom}
-        renderTextLayer={false}
+        renderTextLayer={true}
         renderAnnotationLayer={true}
-      >
-        <InlineTextLayer />
-      </Page>
+      />
     </div>
   );
 });
