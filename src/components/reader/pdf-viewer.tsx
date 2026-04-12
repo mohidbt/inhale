@@ -120,18 +120,18 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
       { root: el, threshold: [0.25, 0.5, 0.75] }
     );
 
-    // Observe direct children with data-page-number (our wrapper divs only)
+    // Observe all elements with data-page-number anywhere within the container
     const observe = () => {
       io.disconnect();
-      const pageEls = el.querySelectorAll(":scope > div > [data-page-number]");
+      const pageEls = el.querySelectorAll("[data-page-number]");
       pageEls.forEach((pageEl) => io.observe(pageEl));
     };
 
     // Re-observe when DOM children change (placeholder ↔ PdfPage swaps)
     const mo = new MutationObserver(observe);
-    mo.observe(el.querySelector(":scope > div") ?? el, {
+    mo.observe(el, {
       childList: true,
-      subtree: false,
+      subtree: true,
     });
     observe();
 
