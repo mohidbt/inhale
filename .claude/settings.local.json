@@ -60,7 +60,22 @@
       "Bash(find:*)",
       "Bash(xxd)",
       "Bash(echo \"EXIT=$?\")",
-      "Bash(grep -E \"\\\\.\\(md|txt\\)$\")"
+      "Bash(grep -E \"\\\\.\\(md|txt\\)$\")",
+      "Bash(mkdir -p /Users/mohidbutt/Documents/Claudius/inhale/test-artifacts)",
+      "Bash(mv /Users/mohidbutt/Documents/Claudius/inhale/reader-*.png /Users/mohidbutt/Documents/Claudius/inhale/test-artifacts/)",
+      "Bash(git check-ignore:*)",
+      "Bash(git commit:*)",
+      "Bash(git worktree:*)",
+      "Bash(git rm:*)",
+      "Bash(git:*)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(rtk read:*)",
+      "Bash(rtk grep:*)",
+      "Bash(rtk git:*)",
+      "Bash(gh pr create --base main --head feature/phase-1-ai --title 'Phase 1: BYOK OpenRouter + chunking + outline + RAG chat + e2e tests' --body ':*)",
+      "Bash(npm view:*)",
+      "Read(//private/tmp/pgvector-pg16/**)",
+      "Bash(rtk make:*)"
     ]
   }
 }

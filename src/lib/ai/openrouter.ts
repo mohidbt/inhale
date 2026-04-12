@@ -9,6 +9,10 @@ import { decrypt } from "@/lib/encryption";
  * Throws Error("NO_LLM_KEY") if the user has not stored an LLM key.
  */
 export async function getDecryptedApiKey(userId: string): Promise<string> {
+  if (process.env.INHALE_STUB_EMBEDDINGS === "1") {
+    return "stub-api-key";
+  }
+
   const [row] = await db
     .select({ encryptedKey: userApiKeys.encryptedKey })
     .from(userApiKeys)

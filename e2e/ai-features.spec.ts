@@ -34,7 +34,7 @@ test("upload sets processingStatus to ready or failed", async ({ page }) => {
 
   expect(typeof doc.id).toBe("number");
   expect(doc.id).toBeGreaterThan(0);
-  expect(doc.processingStatus).toMatch(/^(ready|failed)$/);
+  expect(doc.processingStatus).toBe("ready");
 });
 
 test("outline sidebar fetches and displays document sections", async ({ page }) => {
