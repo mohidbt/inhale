@@ -29,7 +29,7 @@ export interface ExtractionResult {
 // Constants
 // ---------------------------------------------------------------------------
 
-// Matches [n] where n is 1–999
+// Matches [n] where n is 1–999. Uses `g` flag — consume only via matchAll (resets lastIndex).
 const MARKER_RE = /\[(\d{1,3})\]/g;
 
 // Bibliography section header (case-insensitive)
@@ -38,7 +38,7 @@ const BIB_HEADER_RE = /^(references|bibliography|works cited|literature cited)\s
 // A line that starts a new numbered reference entry: [n] or n. (at line start)
 const REF_ENTRY_START_RE = /^\[(\d{1,3})\]\s+/;
 
-// Year: 4 digits in range 1900–2099, optionally in parens
+// Year: 4 digits in range 1900–2099. Uses `g` flag — consume only via matchAll (resets lastIndex).
 const YEAR_RE = /\b(1[9]\d{2}|20\d{2})\b/g;
 
 // DOI: handles doi:10.xxx, DOI:10.xxx, https://doi.org/10.xxx, plain 10.xxx/

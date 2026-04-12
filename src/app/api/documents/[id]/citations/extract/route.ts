@@ -39,20 +39,19 @@ export async function POST(
     // Run citation extraction
     const { markers, references } = extractCitations(pages);
 
-    // Delete existing references for this document (idempotent re-extraction)
-    await db
-      .delete(documentReferences)
-      .where(eq(documentReferences.documentId, documentId));
-
     // Build marker lookup for pageNumber
     const markerPageMap = new Map<number, number>(
       markers.map((m) => [m.markerIndex, m.pageNumber])
     );
 
-    // Insert new rows (only for references that were found in the bibliography)
+    // Only replace existing data if we actually found new references
     let inserted: typeof documentReferences.$inferSelect[] = [];
 
     if (references.length > 0) {
+      await db
+        .delete(documentReferences)
+        .where(eq(documentReferences.documentId, documentId));
+
       inserted = await db
         .insert(documentReferences)
         .values(
@@ -87,7 +86,8 @@ export async function POST(
       },
       { status: 200 }
     );
-  } catch {
+  } catch (err) {
+    console.error("[citations/extract] failed for document", documentId, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
