@@ -23,5 +23,5 @@ export const libraryReferences = pgTable("library_references", {
     .$onUpdate(() => new Date()),
 }, (table) => [
   index("library_references_user_id_idx").on(table.userId),
-  index("library_references_user_doi_idx").on(table.userId, table.doi),
+  index("library_references_user_doi_idx").on(table.userId, table.doi), // not unique — doi is nullable; dedup is handled in application layer
 ]);
