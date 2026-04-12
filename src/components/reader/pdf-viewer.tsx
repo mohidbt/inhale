@@ -102,6 +102,7 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
     const el = containerRef.current;
     if (!el || totalPages <= 0) return;
 
+    let ioTimer = 0;
     const io = new IntersectionObserver(
       (entries) => {
         let bestRatio = 0;
@@ -115,7 +116,11 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
             if (Number.isFinite(n)) bestPage = n;
           }
         }
-        if (bestPage > 0) setCurrentPage(bestPage);
+        if (bestPage > 0) {
+          // Debounce to avoid flickering during smooth scroll animations
+          cancelAnimationFrame(ioTimer);
+          ioTimer = requestAnimationFrame(() => setCurrentPage(bestPage));
+        }
       },
       { root: el, threshold: [0.25, 0.5, 0.75] }
     );
@@ -136,6 +141,7 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
     observe();
 
     return () => {
+      cancelAnimationFrame(ioTimer);
       io.disconnect();
       mo.disconnect();
     };
