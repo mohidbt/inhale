@@ -7,8 +7,13 @@ import type { InferSelectModel } from "drizzle-orm";
 
 export type DocumentReference = InferSelectModel<typeof documentReferences>;
 
+export interface CitationWithStatus extends DocumentReference {
+  keptId: number | null;
+  libraryReferenceId: number | null;
+}
+
 interface CitationCardProps {
-  citation: DocumentReference;
+  citation: CitationWithStatus;
   rect: { top: number; left: number };
   onDismiss: () => void;
   onKeep?: () => void;
@@ -146,19 +151,23 @@ export function CitationCard({
       <div className="flex gap-2 border-t p-3">
         <Button
           size="sm"
-          variant="default"
+          variant={citation.keptId ? "secondary" : "default"}
           className="flex-1 text-xs"
-          onClick={onKeep}
+          onClick={citation.keptId ? undefined : onKeep}
+          disabled={!!citation.keptId}
+          aria-label={citation.keptId ? "Already kept" : "Keep It"}
         >
-          Keep It
+          {citation.keptId ? "Kept ✓" : "Keep It"}
         </Button>
         <Button
           size="sm"
-          variant="outline"
+          variant={citation.libraryReferenceId ? "secondary" : "outline"}
           className="flex-1 text-xs"
-          onClick={onSaveToLibrary}
+          onClick={citation.libraryReferenceId ? undefined : onSaveToLibrary}
+          disabled={!!citation.libraryReferenceId}
+          aria-label={citation.libraryReferenceId ? "Already in library" : "Save to Library"}
         >
-          Save to Library
+          {citation.libraryReferenceId ? "In Library ✓" : "Save to Library"}
         </Button>
       </div>
     </div>

@@ -2,19 +2,19 @@
 
 import { useState, useEffect, useCallback, type RefObject } from "react";
 import { findCitationMarkerAtOffset } from "@/lib/citations/click-detection";
-import type { DocumentReference } from "@/components/reader/citation-card";
+import type { CitationWithStatus } from "@/components/reader/citation-card";
 
 interface CitationClickResult {
-  activeCitation: DocumentReference | null;
+  activeCitation: CitationWithStatus | null;
   clickPosition: { top: number; left: number } | null;
   dismiss: () => void;
 }
 
 export function useCitationClick(
   containerRef: RefObject<HTMLElement | null>,
-  citations: DocumentReference[]
+  citations: CitationWithStatus[]
 ): CitationClickResult {
-  const [activeCitation, setActiveCitation] = useState<DocumentReference | null>(null);
+  const [activeCitation, setActiveCitation] = useState<CitationWithStatus | null>(null);
   const [clickPosition, setClickPosition] = useState<{ top: number; left: number } | null>(null);
 
   const dismiss = useCallback(() => {

@@ -10,7 +10,8 @@ import { CommentInput } from "@/components/reader/comment-input";
 import { ChatPanel } from "@/components/reader/chat-panel";
 import { OutlineSidebar } from "@/components/reader/outline-sidebar";
 import { ConceptsPanel } from "@/components/reader/concepts-panel";
-import { CitationCard, type DocumentReference } from "@/components/reader/citation-card";
+import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
+import { toast } from "sonner";
 import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
 import { useCitationClick } from "@/hooks/use-citation-click";
@@ -51,7 +52,8 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const currentPage = useReaderState((s) => s.currentPage);
 
   // Citations
-  const [citations, setCitations] = useState<DocumentReference[]>([]);
+  const [citations, setCitations] = useState<CitationWithStatus[]>([]);
+  const [citationsRefreshKey, setCitationsRefreshKey] = useState(0);
   const { activeCitation, clickPosition, dismiss: dismissCitation } = useCitationClick(
     pdfScrollRef,
     citations
@@ -60,8 +62,34 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   useEffect(() => {
     fetch(`/api/documents/${documentId}/citations`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
-      .then((data: { citations: DocumentReference[] }) => setCitations(data.citations))
+      .then((data: { citations: CitationWithStatus[] }) => setCitations(data.citations))
       .catch(() => {/* non-fatal: citations just won't show */});
+  }, [documentId, citationsRefreshKey]);
+
+  const handleKeep = useCallback(async (citationId: number) => {
+    const res = await fetch(
+      `/api/documents/${documentId}/citations/${citationId}/keep`,
+      { method: "POST" }
+    );
+    if (res.ok) {
+      toast.success("Kept");
+      setCitationsRefreshKey((k) => k + 1);
+    } else {
+      toast.error("Failed to keep citation");
+    }
+  }, [documentId]);
+
+  const handleSaveToLibrary = useCallback(async (citationId: number) => {
+    const res = await fetch(
+      `/api/documents/${documentId}/citations/${citationId}/save`,
+      { method: "POST" }
+    );
+    if (res.ok) {
+      toast.success("Saved to library");
+      setCitationsRefreshKey((k) => k + 1);
+    } else {
+      toast.error("Failed to save to library");
+    }
   }, [documentId]);
 
   const handleHighlight = useCallback(
@@ -160,11 +188,12 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
           />
         )}
         {activeCitation && clickPosition && (
-          // onKeep / onSaveToLibrary are wired in Task 22
           <CitationCard
             citation={activeCitation}
             rect={clickPosition}
             onDismiss={dismissCitation}
+            onKeep={() => handleKeep(activeCitation.id)}
+            onSaveToLibrary={() => handleSaveToLibrary(activeCitation.id)}
           />
         )}
       </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { documentReferences, documents } from "@/db/schema";
+import { documentReferences, documents, keptCitations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 
 export async function GET(
@@ -26,8 +26,34 @@ export async function GET(
     if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const citations = await db
-      .select()
+      .select({
+        id: documentReferences.id,
+        documentId: documentReferences.documentId,
+        markerText: documentReferences.markerText,
+        markerIndex: documentReferences.markerIndex,
+        rawText: documentReferences.rawText,
+        title: documentReferences.title,
+        authors: documentReferences.authors,
+        year: documentReferences.year,
+        doi: documentReferences.doi,
+        url: documentReferences.url,
+        semanticScholarId: documentReferences.semanticScholarId,
+        abstract: documentReferences.abstract,
+        venue: documentReferences.venue,
+        citationCount: documentReferences.citationCount,
+        pageNumber: documentReferences.pageNumber,
+        createdAt: documentReferences.createdAt,
+        keptId: keptCitations.id,
+        libraryReferenceId: keptCitations.libraryReferenceId,
+      })
       .from(documentReferences)
+      .leftJoin(
+        keptCitations,
+        and(
+          eq(keptCitations.documentReferenceId, documentReferences.id),
+          eq(keptCitations.userId, session.user.id)
+        )
+      )
       .where(eq(documentReferences.documentId, documentId));
 
     return NextResponse.json({ citations });
