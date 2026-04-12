@@ -129,20 +129,3 @@
   }
 }
 
-/* ── react-pdf text layer selection fixes ───────────────────────── */
-
-/* Prevent the endOfContent element from expanding to cover the full page
-   during selection, which causes selection to snap to the entire page */
-.textLayer .endOfContent {
-  display: none !important;
-}
-
-/* Ensure text layer spans allow proper selection highlighting */
-.textLayer :is(span, br) {
-  color: transparent;
-}
-
-/* Uniform selection color across all text layer spans */
-.textLayer span::selection {
-  background: rgba(0, 100, 255, 0.3);
-}
