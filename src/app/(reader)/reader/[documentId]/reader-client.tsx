@@ -160,6 +160,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
           />
         )}
         {activeCitation && clickPosition && (
+          // onKeep / onSaveToLibrary are wired in Task 22
           <CitationCard
             citation={activeCitation}
             rect={clickPosition}

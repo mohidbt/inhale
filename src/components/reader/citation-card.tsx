@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { documentReferences } from "@/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
@@ -23,17 +23,30 @@ export function CitationCard({
   onSaveToLibrary,
 }: CitationCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [leftPos, setLeftPos] = useState<number>(rect.left);
 
-  // Dismiss on click outside
+  // Dismiss on click outside or Escape key
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
       if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
         onDismiss();
       }
     }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onDismiss();
+    }
     document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, [onDismiss]);
+
+  // Clamp card to viewport horizontally — runs client-side only after mount
+  useEffect(() => {
+    setLeftPos(Math.min(rect.left, window.innerWidth - 336));
+  }, [rect.left]);
 
   const title = citation.title ?? citation.rawText ?? citation.markerText;
   const abstract = citation.abstract
@@ -42,12 +55,11 @@ export function CitationCard({
       : citation.abstract
     : null;
 
-  // Keep card within viewport horizontally
-  const leftPos = Math.min(rect.left, window.innerWidth - 360);
-
   return (
     <div
       ref={cardRef}
+      role="dialog"
+      aria-label="Citation details"
       className="fixed z-50 w-80 rounded-lg border bg-background shadow-xl"
       style={{ top: rect.top, left: Math.max(8, leftPos) }}
     >
