@@ -100,6 +100,7 @@ export async function POST(
       content:
         "You are a research assistant answering questions about a single PDF. " +
         "Use ONLY the provided context. Cite page numbers inline as (p. N). " +
+        (currentPage ? `The user is currently viewing page ${currentPage}. ` : "") +
         "If the answer is not in the context, say so.\n\nContext:\n" + contextText,
     },
     ...(body.history ?? []).slice(-10),
