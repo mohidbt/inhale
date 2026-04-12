@@ -28,7 +28,7 @@ export const useReaderState = create<ReaderState>((set) => ({
     set((s) => {
       if (page === null) return { scrollTargetPage: null };
       const clamped = Math.max(1, Math.min(s.totalPages || 1, page));
-      return { scrollTargetPage: clamped };
+      return { scrollTargetPage: clamped, currentPage: clamped };
     }),
   setZoom: (zoom) => set({ zoom: Math.max(0.5, Math.min(3.0, zoom)) }),
   zoomIn: () => set((s) => ({ zoom: Math.min(3.0, s.zoom + 0.25) })),

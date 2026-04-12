@@ -38,6 +38,7 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
   const zoom = useReaderState((s) => s.zoom);
   const internalRef = useRef<HTMLDivElement>(null);
   const containerRef = externalRef ?? internalRef;
+  const isAnimatingRef = useRef(false);
   const [scrollTop, setScrollTop] = useState(0);
 
   const onDocumentLoadSuccess = useCallback(
@@ -64,9 +65,19 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const handler = () => setScrollTop(el.scrollTop);
+    let raf = 0;
+    const handler = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        setScrollTop(el.scrollTop);
+        raf = 0;
+      });
+    };
     el.addEventListener("scroll", handler, { passive: true });
-    return () => el.removeEventListener("scroll", handler);
+    return () => {
+      el.removeEventListener("scroll", handler);
+      cancelAnimationFrame(raf);
+    };
   }, [containerRef]);
 
   // Scroll to an explicitly requested page (Prev/Next buttons, outline clicks, etc.)
@@ -79,10 +90,12 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
     }
     const pageEl = el.querySelector(`[data-page-number="${scrollTargetPage}"]`);
     if (pageEl) {
+      isAnimatingRef.current = true;
       (pageEl as HTMLElement).scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
+      el.addEventListener("scrollend", () => { isAnimatingRef.current = false; }, { once: true });
     }
     setScrollTargetPage(null);
   }, [scrollTargetPage, containerRef, setScrollTargetPage]);
@@ -94,6 +107,8 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
 
     const io = new IntersectionObserver(
       (entries) => {
+        // Suppress IO updates during programmatic smooth scroll
+        if (isAnimatingRef.current) return;
         let bestRatio = 0;
         let bestPage = 0;
         for (const entry of entries) {
@@ -110,18 +125,18 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
       { root: el, threshold: [0.25, 0.5, 0.75] }
     );
 
-    // Observe direct children with data-page-number (our wrapper divs only)
+    // Observe all elements with data-page-number anywhere within the container
     const observe = () => {
       io.disconnect();
-      const pageEls = el.querySelectorAll(":scope > div > [data-page-number]");
+      const pageEls = el.querySelectorAll("[data-page-number]");
       pageEls.forEach((pageEl) => io.observe(pageEl));
     };
 
     // Re-observe when DOM children change (placeholder ↔ PdfPage swaps)
     const mo = new MutationObserver(observe);
-    mo.observe(el.querySelector(":scope > div") ?? el, {
+    mo.observe(el, {
       childList: true,
-      subtree: false,
+      subtree: true,
     });
     observe();
 
