@@ -40,10 +40,11 @@ const BIB_HEADER_RE = /^(references|bibliography|works cited|literature cited)\s
 //   [n]  — bracket style (IEEE/APA/Chicago): [1] Smith …
 //   n.   — Vancouver/AMA/Nature style:        1. Smith …
 //
-// DOI disambiguation: the n. branch uses a negative lookahead `(?!\d|\/)` so
-// that lines like "10.1038/nature…" (digit-dot-digit) are NOT treated as
-// entry-start lines — they get absorbed as continuation text instead.
-const REF_ENTRY_START_RE = /^(?:\[(\d{1,3})\]\s+|(\d{1,3})\.(?!\d|\/)[ \t]+)/;
+// DOI disambiguation: the n. branch requires \s+ immediately after the dot.
+// A DOI like "10.1038/nature…" has a digit ('1') right after the dot, which
+// does not satisfy \s+, so it is never treated as an entry-start line and is
+// absorbed as continuation text instead. No negative lookahead is needed.
+const REF_ENTRY_START_RE = /^(?:\[(\d{1,3})\]\s+|(\d{1,3})\.\s+)/;
 
 // Year: 4 digits in range 1900–2099. Uses `g` flag — consume only via matchAll (resets lastIndex).
 const YEAR_RE = /\b(1[9]\d{2}|20\d{2})\b/g;
