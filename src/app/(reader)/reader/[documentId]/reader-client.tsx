@@ -10,8 +10,12 @@ import { CommentInput } from "@/components/reader/comment-input";
 import { ChatPanel } from "@/components/reader/chat-panel";
 import { OutlineSidebar } from "@/components/reader/outline-sidebar";
 import { ConceptsPanel } from "@/components/reader/concepts-panel";
+import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
+import { CitationsSidebar } from "@/components/reader/citations-sidebar";
+import { toast } from "sonner";
 import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
+import { useCitationClick } from "@/hooks/use-citation-click";
 
 const PdfViewer = dynamic(
   () => import("@/components/reader/pdf-viewer").then((m) => ({ default: m.PdfViewer })),
@@ -44,9 +48,101 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [chatOpen, setChatOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [conceptsOpen, setConceptsOpen] = useState(false);
+  const [citationsOpen, setCitationsOpen] = useState(false);
   const pdfScrollRef = useRef<HTMLDivElement>(null);
   const { selection, clearSelection } = useTextSelection();
   const currentPage = useReaderState((s) => s.currentPage);
+
+  // Citations
+  const [citations, setCitations] = useState<CitationWithStatus[]>([]);
+  const [citationsLoading, setCitationsLoading] = useState(true);
+  const pendingCitationIds = useRef<Set<number>>(new Set());
+  const { activeCitation, clickPosition, dismiss: dismissCitation } = useCitationClick(
+    pdfScrollRef,
+    citations
+  );
+
+  type MarkerRect = {
+    id: number;
+    referenceId: number;
+    markerIndex: number;
+    pageNumber: number;
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  };
+  const [markers, setMarkers] = useState<MarkerRect[]>([]);
+  const [citationsRefreshKey, setCitationsRefreshKey] = useState(0);
+
+  useEffect(() => {
+    setCitationsLoading(true);
+    fetch(`/api/documents/${documentId}/citations`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: { citations: CitationWithStatus[] }) => setCitations(data.citations))
+      .catch(() => {/* non-fatal: citations just won't show */})
+      .finally(() => setCitationsLoading(false));
+  }, [documentId, citationsRefreshKey]);
+
+  useEffect(() => {
+    fetch(`/api/documents/${documentId}/citations/markers`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: { markers: MarkerRect[] }) => setMarkers(data.markers))
+      .catch(() => {/* non-fatal: overlays just won't show */});
+  }, [documentId, citationsRefreshKey]);
+
+  const patchCitation = useCallback(
+    (citationId: number, patch: Partial<CitationWithStatus>) => {
+      setCitations((prev) =>
+        prev.map((c) => (c.id === citationId ? { ...c, ...patch } : c))
+      );
+    },
+    []
+  );
+
+  const handleKeep = useCallback(async (citationId: number) => {
+    // Guard against double-submit from rapid clicks
+    if (pendingCitationIds.current.has(citationId)) return;
+    pendingCitationIds.current.add(citationId);
+    try {
+      const res = await fetch(
+        `/api/documents/${documentId}/citations/${citationId}/keep`,
+        { method: "POST" }
+      );
+      if (res.ok) {
+        const { keptId } = (await res.json()) as { keptId: number };
+        patchCitation(citationId, { keptId });
+        toast.success("Kept");
+      } else {
+        toast.error("Failed to keep citation");
+      }
+    } finally {
+      pendingCitationIds.current.delete(citationId);
+    }
+  }, [documentId, patchCitation]);
+
+  const handleSaveToLibrary = useCallback(async (citationId: number) => {
+    if (pendingCitationIds.current.has(citationId)) return;
+    pendingCitationIds.current.add(citationId);
+    try {
+      const res = await fetch(
+        `/api/documents/${documentId}/citations/${citationId}/save`,
+        { method: "POST" }
+      );
+      if (res.ok) {
+        const { keptId, libraryReferenceId } = (await res.json()) as {
+          keptId: number;
+          libraryReferenceId: number;
+        };
+        patchCitation(citationId, { keptId, libraryReferenceId });
+        toast.success("Saved to library");
+      } else {
+        toast.error("Failed to save to library");
+      }
+    } finally {
+      pendingCitationIds.current.delete(citationId);
+    }
+  }, [documentId, patchCitation]);
 
   const handleHighlight = useCallback(
     async (color: HighlightColor) => {
@@ -95,6 +191,8 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         onToggleOutline={() => setOutlineOpen((o) => !o)}
         conceptsOpen={conceptsOpen}
         onToggleConcepts={() => setConceptsOpen((o) => !o)}
+        citationsOpen={citationsOpen}
+        onToggleCitations={() => setCitationsOpen((o) => !o)}
       />
       {saveError && (
         <div className="bg-destructive/10 text-destructive px-4 py-2 text-sm">
@@ -115,7 +213,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         </div>
       )}
       <div className="relative flex flex-1 overflow-hidden">
-        <PdfViewer url={url} containerRef={pdfScrollRef} />
+        <PdfViewer url={url} containerRef={pdfScrollRef} markers={markers} />
         <HighlightsSidebar documentId={documentId} open={sidebarOpen} refreshKey={refreshKey} />
         <CommentThread
           documentId={documentId}
@@ -136,11 +234,27 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
           selectedText={selection?.text ?? ""}
           open={conceptsOpen}
         />
+        <CitationsSidebar
+          documentId={documentId}
+          open={citationsOpen}
+          citations={citations}
+          loading={citationsLoading}
+          onExtracted={() => setCitationsRefreshKey((k) => k + 1)}
+        />
         {selection && (
           <SelectionToolbar
             rect={selection.rect}
             onHighlight={handleHighlight}
             onDismiss={clearSelection}
+          />
+        )}
+        {activeCitation && clickPosition && (
+          <CitationCard
+            citation={activeCitation}
+            rect={clickPosition}
+            onDismiss={dismissCitation}
+            onKeep={() => handleKeep(activeCitation.id)}
+            onSaveToLibrary={() => handleSaveToLibrary(activeCitation.id)}
           />
         )}
       </div>

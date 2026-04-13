@@ -24,6 +24,12 @@ export default function MainLayout({
               Library
             </Link>
             <Link
+              href="/library/references"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              References
+            </Link>
+            <Link
               href="/settings"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >

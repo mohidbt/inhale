@@ -19,6 +19,8 @@ interface ReaderToolbarProps {
   onToggleOutline?: () => void;
   conceptsOpen?: boolean;
   onToggleConcepts?: () => void;
+  citationsOpen?: boolean;
+  onToggleCitations?: () => void;
 }
 
 export function ReaderToolbar({
@@ -35,6 +37,8 @@ export function ReaderToolbar({
   onToggleOutline,
   conceptsOpen,
   onToggleConcepts,
+  citationsOpen,
+  onToggleCitations,
 }: ReaderToolbarProps) {
   const currentPage = useReaderState((s) => s.currentPage);
   const totalPages = useReaderState((s) => s.totalPages);
@@ -117,6 +121,15 @@ export function ReaderToolbar({
             onClick={onToggleConcepts}
           >
             Explain
+          </Button>
+        )}
+        {onToggleCitations && (
+          <Button
+            variant={citationsOpen ? "secondary" : "ghost"}
+            size="sm"
+            onClick={onToggleCitations}
+          >
+            Citations
           </Button>
         )}
       </div>
