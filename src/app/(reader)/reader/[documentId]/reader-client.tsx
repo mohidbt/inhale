@@ -13,6 +13,8 @@ import { ConceptsPanel } from "@/components/reader/concepts-panel";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
 import { CitationsSidebar } from "@/components/reader/citations-sidebar";
 import { DockableSidebar } from "@/components/reader/dockable-sidebar";
+import { FindBar } from "@/components/reader/find-bar";
+import { usePdfFind } from "@/hooks/use-pdf-find";
 import { toast } from "sonner";
 import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
@@ -56,6 +58,9 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const totalPages = useReaderState((s) => s.totalPages);
   const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[] | null>(null);
   const [pdfDoc, setPdfDoc] = useState<unknown>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [matchCase, setMatchCase] = useState(false);
+  const find = usePdfFind(pdfDoc);
 
   // Citations
   const [citations, setCitations] = useState<CitationWithStatus[]>([]);
@@ -181,6 +186,17 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   }, [saveError]);
 
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setFindOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
     if (!pdfDoc) return;
     let cancelled = false;
     (async () => {
@@ -250,6 +266,15 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
           {saveError}
         </div>
       )}
+      <FindBar
+        open={findOpen}
+        matchCase={matchCase}
+        onSearch={(q, opts) => find.search(q, opts)}
+        onNext={find.next}
+        onPrev={find.prev}
+        onToggleCase={() => setMatchCase((v) => !v)}
+        onClose={() => setFindOpen(false)}
+      />
       {showCommentInput && (
         <div className="border-b bg-background">
           <CommentInput
