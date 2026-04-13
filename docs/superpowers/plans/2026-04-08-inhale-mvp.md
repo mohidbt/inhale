@@ -6,7 +6,7 @@
 
 **Architecture:** Pure Next.js 16 App Router monorepo. CRUD, auth, AI/RAG, and document processing all run as Next.js route handlers and server actions — no separate Python service. Postgres 16 + pgvector for storage and vector search. Drizzle ORM owns the schema. SSE for AI streaming, WebSocket only for voice mode (Phase 3.2).
 
-**Tech Stack:** Next.js 16, React 19, Tailwind 4, shadcn/ui (nova), Better Auth, Drizzle ORM, react-pdf v9, Zustand, `@openrouter/sdk` (BYOK), pgvector (Postgres extension), Node.js crypto AES-256-GCM
+**Tech Stack:** Next.js 16, React 19, Tailwind 4, shadcn/ui (nova), Better Auth, Drizzle ORM, react-pdf v10, Zustand, `@openrouter/sdk` (BYOK), pgvector (Postgres extension), Node.js crypto AES-256-GCM
 
 > **Not using LangChain TS.** OpenRouter SDK's `callModel` + `tool()` + `stopWhen` covers v0 RAG and any future tool use. Revisit LangChain/LangGraph if/when multi-agent or human-in-the-loop workflows are actually needed.
 
@@ -32,9 +32,9 @@
 | **1.3 — Minimal RAG Chat** | DONE | `/api/documents/[id]/chat` — pgvector retrieval + viewport bias, SSE, conversation persistence, `conversationId` round-trip. Client BYOK fetch removed. + viewport page-awareness in system prompt. |
 | **E2E — Playwright test suite** | DONE | `e2e/ai-features.spec.ts` — 4 tests: upload→chunk API contract, outline sidebar (mocked), explain SSE (mocked), RAG chat turn (mocked). Added `data-testid` to `OutlineSidebar` + `ConceptsPanel` for stable selectors. Tests 2–4 use `page.route()` — no real OpenRouter key needed. |
 | **Hotfix — local DB schema drift** | DONE | Chat 500'd with `column "page_start" does not exist`. Root cause: local Postgres was out of sync with Phase 1.1's schema — `document_chunks` was missing `page_start`/`page_end`/`embedding` columns and the ivfflat index, and the pgvector extension had never been installed. Cause: Phase 1.1 edited `document-chunks.ts` but never ran `drizzle-kit generate`/`push`; `drizzle/0002_enable_pgvector.sql` was authored but not in the journal. Fix: built pgvector 0.8.2 from source against `postgresql@16` (brew's formula only ships pg17/pg18 binaries), then applied 4 raw SQL statements manually. DB now aligned. **E2E blind spot:** test 1 accepts `processingStatus: /^(ready\|failed)$/`, so silent chunking failures pass; tests 2–4 mock `/api/documents/*/chat` so the real SQL path is never exercised. No commit — all changes were DB-side. |
-| **Migration rebaseline — drift debt** | NEXT | `drizzle/` has only `0000_goofy_spencer_smythe.sql`, which predates chunking entirely. Every table since Phase 0.4+ (`document_chunks`, `document_sections`, `user_highlights`, `user_comments`, agent tables, pgvector extension) was created via ad-hoc `drizzle-kit push` and is NOT reflected in any migration file or the journal. A fresh clone + `drizzle-kit migrate` will not reproduce the current state. **Todo:** (1) snapshot the current schema into real migration files — either via `drizzle-kit introspect` (reads live DB → produces schema + migration) or by hand-rolling; update `drizzle/meta/_journal.json` + `*_snapshot.json` accordingly. (2) Fold `drizzle/0002_enable_pgvector.sql` in (note: `CREATE EXTENSION vector` requires superuser, separate from app role — either script it outside drizzle or document it). (3) Add a macOS setup note/README for pgvector on pg16: brew ships pg17/pg18 only, so either build from source (`git clone pgvector && make PG_CONFIG=/opt/homebrew/opt/postgresql@16/bin/pg_config && make install`) or switch to the `pgvector/pgvector:pg16` Docker image already referenced in `docker-compose.yml`. (4) Evaluate whether local dev should standardize on Docker Postgres to prevent this class of drift. (5) Tighten E2E so it catches schema drift — e.g. a test that uploads with a real/fake key stub and asserts `processingStatus === "ready"` and `COUNT(document_chunks) > 0` for the doc, rather than accepting `failed` as a valid outcome. |
-| **Tech debt — PDF text selection** | KNOWN | pdfjs renders every word as a separate `position: absolute` span. This makes browser `::selection` produce per-word highlight rectangles (overlapping bars on titles), breaks triple-click line select, and causes full-page selection snap via `.endOfContent`. Root cause is architectural — no CSS fix exists. Attempted: (1) custom CSS overrides on `.endOfContent`/`::selection`, (2) removing overrides to restore defaults, (3) custom inline text layer with `usePageContext()` — alignment was too poor (browser font ≠ PDF font). **Future options:** (a) proper inline text layer with per-line `scaleX` correction matching PDF glyph widths, (b) alternative library (e.g. `@react-pdf-viewer/core`), (c) accept limitation. |
+| **Migration rebaseline — drift debt** | DONE | `drizzle/` has only `0000_goofy_spencer_smythe.sql`, which predates chunking entirely. Every table since Phase 0.4+ (`document_chunks`, `document_sections`, `user_highlights`, `user_comments`, agent tables, pgvector extension) was created via ad-hoc `drizzle-kit push` and is NOT reflected in any migration file or the journal. A fresh clone + `drizzle-kit migrate` will not reproduce the current state. **Todo:** (1) snapshot the current schema into real migration files — either via `drizzle-kit introspect` (reads live DB → produces schema + migration) or by hand-rolling; update `drizzle/meta/_journal.json` + `*_snapshot.json` accordingly. (2) Fold `drizzle/0002_enable_pgvector.sql` in (note: `CREATE EXTENSION vector` requires superuser, separate from app role — either script it outside drizzle or document it). (3) Add a macOS setup note/README for pgvector on pg16: brew ships pg17/pg18 only, so either build from source (`git clone pgvector && make PG_CONFIG=/opt/homebrew/opt/postgresql@16/bin/pg_config && make install`) or switch to the `pgvector/pgvector:pg16` Docker image already referenced in `docker-compose.yml`. (4) Evaluate whether local dev should standardize on Docker Postgres to prevent this class of drift. (5) Tighten E2E so it catches schema drift — e.g. a test that uploads with a real/fake key stub and asserts `processingStatus === "ready"` and `COUNT(document_chunks) > 0` for the doc, rather than accepting `failed` as a valid outcome. |
 | 2.0–2.3 | Pending | — |
+| **2.0.1 — Smart Citations: annotation-based detection (superscripts)** | NEXT | Phase 2.0 parser only matches `[n]` brackets. Fails silently on Nature/Science/Cell/NEJM/PNAS/JAMA/Lancet — most biomedical journals, which use superscript citations rendered as PDF link annotations. Verified on `e2e/fixtures/test_real_paper.pdf` (Nature Physics): 0 `[n]` hits, 99 `/Link` annots on pages 1–4. Also: `HighlightLayer` is a stub returning `null` — the boxes visible on `[n]`-style PDFs today are pdf.js's built-in annotation-layer CSS, not our code. |
 | 3.0–3.3 | Pending | — |
 | 4.0–4.4 | Pending | — |
 
@@ -48,14 +48,14 @@
 | Auth | Better Auth (self-hosted TS lib) | Email+password built-in, OAuth plugin later, stores in your Postgres, no vendor lock-in |
 | ORM | Drizzle ORM | Lightweight, SQL-like, excellent TS inference, schema-as-code |
 | Streaming | SSE for text agent + all AI features; WebSocket only for voice | SSE simpler, works through Vercel/Cloudflare, auto-reconnects |
-| PDF rendering | react-pdf v9 (wraps PDF.js), loaded via `next/dynamic` to bypass SSR | React 19 support, canvas + text layer |
+| PDF rendering | react-pdf v10 (wraps PDF.js), loaded via `next/dynamic` to bypass SSR | React 19 support, canvas + text layer |
 | Reader state | Zustand | Minimal boilerplate for page/zoom/scroll state |
 | Vector DB | pgvector (Postgres extension) | No separate service, lives in existing Postgres |
 | Background work | Inline in upload route handler (v0); revisit if jobs >5s become common | Avoid Celery/Redis/queue complexity until measured demand exists |
 | LLM | OpenRouter via `@openrouter/sdk` (BYOK) | User provides key, multi-model access, native TS, `callModel` + tools + streaming |
 | Embeddings | OpenRouter OpenAI-compatible REST endpoint via `fetch` | SDK does not currently expose embeddings; use `POST https://openrouter.ai/api/v1/embeddings` with `openai/text-embedding-3-small` |
 | Agent framework | None (raw `callModel` + `tool()`) | LangChain TS not justified for v0; revisit if multi-agent or HITL is needed |
-| OCR | Mistral OCR API (BYOK), called via `fetch` from Next.js route | Best-in-class for scientific PDFs |
+| OCR | Chandra OCR (Datalab API, BYOK), called via `datalab-python-sdk` from a Next.js Python route or REST `fetch` | Conversion + structured extraction + segmentation in one platform; checkpoints avoid re-parsing; quality scoring enables auto-retry |
 | Citations | Semantic Scholar API (free) | Comprehensive, good rate limits |
 | Encryption | Node.js crypto AES-256-GCM | Built-in, zero dependencies |
 | Repo structure | Single Next.js project under `src/` | No separate services directory |
@@ -1030,7 +1030,7 @@ git commit -m "feat(library): add document library page with upload and grid"
 npm install react-pdf zustand
 ```
 
-**Docs to check:** react-pdf v9 docs — https://github.com/wojtekmaj/react-pdf — check React 19 compatibility and worker setup for Next.js.
+**Docs to check:** react-pdf v10 docs — https://github.com/wojtekmaj/react-pdf — check React 19 compatibility and worker setup for Next.js.
 
 - [ ] **Step 1: Configure Next.js for PDF.js worker**
 
@@ -1038,7 +1038,7 @@ Modify `next.config.ts` to copy the PDF.js worker file. Check react-pdf docs for
 
 ```typescript
 // next.config.ts — add webpack config for pdf.js worker
-// The exact config depends on react-pdf v9 docs
+// The exact config depends on react-pdf v10 docs
 ```
 
 - [ ] **Step 2: Create Zustand reader state store**
@@ -1081,7 +1081,7 @@ export const useReaderState = create<ReaderState>((set) => ({
 import { useState, useEffect } from "react";
 import { pdfjs } from "react-pdf";
 
-// Set worker — check react-pdf v9 docs for correct path
+// Set worker — check react-pdf v10 docs for correct path
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
@@ -2226,7 +2226,7 @@ interface StoredKey {
 const PROVIDERS = [
   { type: "llm", name: "openrouter", label: "LLM (OpenRouter)", placeholder: "sk-or-..." },
   { type: "voice", name: "elevenlabs", label: "Voice (ElevenLabs)", placeholder: "sk_..." },
-  { type: "ocr", name: "mistral", label: "OCR (Mistral)", placeholder: "..." },
+  { type: "ocr", name: "datalab", label: "OCR (Chandra / Datalab)", placeholder: "dl_..." },
 ] as const;
 
 export default function ApiKeysPage() {
@@ -3086,6 +3086,36 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 
 > Phases 2-4 are outlined at task level. Detailed code will be planned when Phase 1 is complete. Each can be planned as a separate detailed plan.
 
+---
+
+## E2E Testing Strategy (Chrome DevTools MCP)
+
+Every implementation phase includes a mandatory **E2E verification gate** that uses Chrome DevTools MCP tools to test the feature in a real browser before marking the phase complete. This replaces "manual test in browser" with automated, reproducible verification.
+
+### Approach
+
+1. **TDD for unit/integration logic** — Write failing tests first for route handlers, services, and utilities (see TDD skill). Use the project's existing Playwright test suite for API-level contracts.
+2. **Chrome DevTools E2E for UI features** — After implementation, use Chrome DevTools MCP to:
+   - `navigate_page` to the relevant page
+   - `wait_for` key elements to load
+   - `take_snapshot` to verify page structure and `data-testid` attributes
+   - `click`, `fill`, `type_text` to simulate user interactions
+   - `take_screenshot` for visual verification
+   - `evaluate_script` for assertions on DOM state, network responses, or console errors
+   - `list_console_messages` to catch runtime errors
+   - `list_network_requests` to verify API calls succeed (no 4xx/5xx)
+3. **Golden path + edge cases** — Each gate specifies the exact flows to verify.
+4. **No phase is DONE until its E2E gate passes.**
+
+### Prerequisites for E2E gates
+
+- Dev server running (`npm run dev`)
+- Docker Postgres up (`docker compose up -d`)
+- A test user account exists (created in Phase 0.1 E2E setup or via seed)
+- Chrome browser accessible to `chrome-devtools-mcp`
+
+---
+
 ## Phase 2.0 — Smart Citations
 
 **DB:** `document_references`, `library_references`, `kept_citations` tables
@@ -3098,6 +3128,46 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 - [ ] Task 22: "Keep It" and "Save to Library" API routes + UI
 - [ ] Task 23: Library references page at `/library/references`
 
+### E2E Gate — Phase 2.0
+
+Using Chrome DevTools MCP after all tasks above pass:
+
+- [ ] **Navigate** to reader page with a processed document (`navigate_page`)
+- [ ] **Snapshot** the text layer and verify `[n]` citation markers are present (`take_snapshot`)
+- [ ] **Click** a citation marker → verify citation card popover appears with title, authors, abstract
+- [ ] **Click** "Keep It" button → verify success feedback, no console errors (`list_console_messages`)
+- [ ] **Click** "Save to Library" → verify success
+- [ ] **Navigate** to `/library/references` → verify saved references appear in the list
+- [ ] **Verify** no 4xx/5xx network errors during the entire flow (`list_network_requests`)
+- [ ] **Screenshot** citation card and references page for visual review (`take_screenshot`)
+
+## Phase 2.0.1 — Smart Citations: annotation-based detection (superscripts)
+
+**Problem:** Phase 2.0's parser (`src/lib/citations/parser.ts:33`) matches only `[n]` bracket markers. This silently fails on most biomedical/life-science journals (Nature, Science, Cell, NEJM, PNAS, JAMA, Lancet, …) which use superscript citations rendered as internal PDF link annotations over tiny superscript glyphs — not `[n]` text.
+
+Verified on `e2e/fixtures/test_real_paper.pdf` (Nature Physics, 26 pages): **0** `[n]` markers in the text, **99** internal `/Link` annotations across pages 1–4. `extractMarkers()` returns `[]`, zero `documentReferences` rows are written, and the reader's click handler has nothing to match against.
+
+Secondary issue: `HighlightLayer` (`src/components/reader/highlight-layer.tsx:14`) still returns `null`. The visible "colored boxes" on `[n]`-style PDFs come from pdf.js's built-in annotation-layer CSS (via `renderAnnotationLayer={true}` at `pdf-page.tsx:23`), not our code — so behavior is inconsistent across PDFs and we have no styling control.
+
+**Strategy:** promote pdf.js `getAnnotations()` to the primary extraction path (covers both `[n]`-with-annotations and superscript-with-annotations uniformly, and gives bounding boxes for free). Keep text-regex as a fallback for older PDFs without proper link annotations.
+
+**Tasks:**
+- [ ] Task 23a: Extend `src/app/api/documents/[id]/citations/extract/route.ts` to load the PDF via pdf.js, call `page.getAnnotations()` per page, filter internal-link annots (`subtype === 'Link'` with `dest`, not `url`), and emit a marker record per annotation with `{pageNumber, rect, destPage, destY}`.
+- [ ] Task 23b: Destination → reference entry resolution. For each annotation's `Dest`, resolve to `(destPage, destY)` in PDF user-space. On the bibliography page, find the reference entry whose top-Y is closest at-or-below `destY`. Parse that entry with the extended bibliography regex (Task 23d).
+- [ ] Task 23c: Schema: store marker bounding boxes so the highlight layer can render them. Decision TBD between (a) new `document_reference_markers (refId, pageNumber, x0, y0, x1, y1)` row-per-occurrence, or (b) jsonb `rects` column on `documentReferences`. Row-per-occurrence is cleaner because one reference can appear many times in the body.
+- [ ] Task 23d: Extend `REF_ENTRY_START_RE` in `parser.ts:39` from `/^\[(\d{1,3})\]\s+/` to also accept `/^(\d{1,3})\.\s+/` (Vancouver/AMA/Nature style). Add fixtures + unit tests in `parser.test.ts` covering both styles.
+- [ ] Task 23e: Implement `HighlightLayer` (`highlight-layer.tsx`) for real. Given stored PDF-user-space rects, convert to CSS pixels using the current `react-pdf` page viewport scale and render absolutely-positioned overlays above the text layer. Style once, consistently — e.g. `bg-primary/10 ring-1 ring-primary/30` on hover — so appearance is identical whether or not the PDF has native link annotations.
+- [ ] Task 23f: Update `useCitationClick` (`src/hooks/use-citation-click.ts`) so the marker-rect overlays from Task 23e are the primary click target. `findCitationFromAnchor` stays as a fallback for the legacy pdf.js-annotation path.
+- [ ] Task 23g: Empty-state affordance. If extraction yields 0 markers for a document, surface a quiet "no citations detected" message in the references sidebar so the failure mode is visible rather than silent.
+
+### E2E Gate — Phase 2.0.1
+
+- [ ] **Nature-style PDF:** upload `e2e/fixtures/test_real_paper.pdf`, navigate to reader, verify ≥1 marker overlay renders on page 1, click it → citation card popover appears with correctly-parsed reference title/authors.
+- [ ] **Bracket-style PDF:** re-run the Phase 2.0 E2E flow on a `[n]`-style paper (Attention-is-all-you-need or equivalent) — all assertions still pass (regression guard).
+- [ ] **Empty case:** upload `e2e/fixtures/test.pdf` → extraction returns 0 markers, references sidebar shows the empty-state message, no UI crash, no console errors.
+- [ ] **Network:** `list_network_requests` — no 4xx/5xx during the full flow for either PDF style.
+- [ ] **Screenshot** marker overlays on both PDF styles for visual parity review.
+
 ## Phase 2.1 — Auto-Highlight
 
 **DB:** `document_highlights` table (auto-generated, distinct from user_highlights)
@@ -3107,6 +3177,18 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 - [ ] Task 25: Classification job (Next.js route handler — sentences → LLM → classify as novelty/method/result/background/limitation)
 - [ ] Task 26: Auto-highlight overlay component (color-coded by classification, toggleable)
 
+### E2E Gate — Phase 2.1
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to reader with a processed document
+- [ ] **Wait for** auto-highlights to render on the PDF pages (`wait_for`)
+- [ ] **Snapshot** → verify highlight overlay elements exist with distinct color classes per classification (novelty/method/result/background/limitation)
+- [ ] **Click** toggle to disable auto-highlights → verify overlays disappear
+- [ ] **Click** toggle to re-enable → verify overlays reappear
+- [ ] **Evaluate** `document.querySelectorAll('[data-highlight-type]')` to confirm correct classification distribution (`evaluate_script`)
+- [ ] **Verify** no console errors, no failed network requests
+
 ## Phase 2.2 — Enhanced AI Agent + TTS
 
 **Tasks:**
@@ -3114,12 +3196,40 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 - [ ] Task 28: SSE streaming for enhanced agent responses with inline citations
 - [ ] Task 29: TTS toggle on agent responses (ElevenLabs BYOK, speaker icon per message)
 
+### E2E Gate — Phase 2.2
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to reader, open the chat panel
+- [ ] **Fill** a question in the chat input and submit
+- [ ] **Wait for** SSE streaming response to complete (`wait_for` message element)
+- [ ] **Snapshot** → verify agent response contains inline citations (linked references)
+- [ ] **Click** a tool-use indicator (if visible) → verify it expands to show tool details
+- [ ] **Click** TTS speaker icon on a message → verify audio playback begins (check for `<audio>` element or Web Audio API state via `evaluate_script`)
+- [ ] **Verify** no console errors, no failed network requests
+- [ ] **Screenshot** the chat with a streamed response for visual review
+
 ## Phase 2.3 — Library Management
 
 **Tasks:**
 - [ ] Task 30: Collections/folders schema and CRUD
 - [ ] Task 31: Tags, search, sort, bulk operations on library page
 - [ ] Task 32: Library UI redesign with filters and grid/list toggle
+
+### E2E Gate — Phase 2.3
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to `/library`
+- [ ] **Snapshot** → verify grid view is the default, document cards render
+- [ ] **Click** "New Collection" → fill name → submit → verify collection appears
+- [ ] **Drag** a document card into the collection (or use move action) → verify it appears in collection
+- [ ] **Click** grid/list toggle → verify layout switches, documents still visible
+- [ ] **Fill** the search input with a document title → verify filter narrows results
+- [ ] **Click** a tag filter → verify documents filter by tag
+- [ ] **Click** sort dropdown → select "Date" → verify order changes
+- [ ] **Verify** no console errors, no failed network requests
+- [ ] **Screenshot** library in both grid and list views
 
 ---
 
@@ -3132,9 +3242,22 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 **Tasks:**
 - [ ] Task 33: Figure/formula Drizzle schemas
 - [ ] Task 34: Figure detection job (Next.js route handler — extract bounding boxes, crop images)
-- [ ] Task 35: Formula extraction task (Mistral OCR → LaTeX)
+- [ ] Task 35: Formula extraction task (Chandra OCR conversion with `mode="accurate"` → LaTeX; use checkpoint from figure detection)
 - [ ] Task 36: Click-to-zoom figure component with AI explanation
 - [ ] Task 37: Formula explanation panel with KaTeX rendering
+
+### E2E Gate — Phase 3.0
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to reader with a document containing figures and formulas
+- [ ] **Snapshot** → verify figure bounding boxes are rendered as clickable regions
+- [ ] **Click** a figure → verify zoom overlay appears with AI explanation text
+- [ ] **Snapshot** → verify formula elements are rendered with KaTeX (check for `.katex` class via `evaluate_script`)
+- [ ] **Click** a formula → verify explanation panel opens with LaTeX source and plain-English explanation
+- [ ] **Close** the overlays → verify they dismiss cleanly, no orphan elements
+- [ ] **Verify** no console errors, no failed network requests
+- [ ] **Screenshot** figure zoom and formula panel for visual review
 
 ## Phase 3.1 — External Links & Deep References
 
@@ -3144,6 +3267,17 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 - [ ] Task 38: Link extraction from PDF text layer
 - [ ] Task 39: DOI/URL resolution and open-access link finder
 - [ ] Task 40: Related paper suggestions via Semantic Scholar
+
+### E2E Gate — Phase 3.1
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to reader with a document containing URLs and DOIs
+- [ ] **Snapshot** → verify extracted links are rendered as clickable elements in the text layer
+- [ ] **Hover** over a DOI link → verify tooltip/popover with resolved metadata appears
+- [ ] **Click** "Related Papers" section → verify Semantic Scholar suggestions render with titles, authors
+- [ ] **Click** a related paper → verify it opens (new tab or in-app navigation)
+- [ ] **Verify** no console errors, no failed network requests
 
 ## Phase 3.2 — Voice Mode (Push-to-Talk)
 
@@ -3155,12 +3289,35 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 - [ ] Task 45: Voice orb UI (idle/listening/processing/speaking states)
 - [ ] Task 46: Interruption handling (spacebar during playback)
 
+### E2E Gate — Phase 3.2
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to reader, open chat panel
+- [ ] **Snapshot** → verify voice orb UI is visible with idle state
+- [ ] **Click** the voice orb (simulates push-to-talk) → verify orb transitions to "listening" state (check CSS class or attribute via `evaluate_script`)
+- [ ] **Evaluate** `navigator.mediaDevices.getUserMedia` permission state to confirm mic access was requested (`evaluate_script`)
+- [ ] **Click** orb again to stop → verify orb transitions to "processing" then "speaking" state
+- [ ] **Press key** spacebar during playback → verify interruption stops audio (`press_key`)
+- [ ] **Verify** WebSocket connection was established (`list_network_requests` — filter for `ws://`)
+- [ ] **Verify** no console errors
+
 ## Phase 3.3 — BibTeX Export
 
 **Tasks:**
 - [ ] Task 47: BibTeX formatter service
 - [ ] Task 48: Export API route (`/api/library/export?format=bibtex`)
 - [ ] Task 49: Copy-single-citation button on citation cards
+
+### E2E Gate — Phase 3.3
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to `/library` or reader with a document that has parsed citations
+- [ ] **Click** "Export BibTeX" button → verify download triggers (check for `blob:` URL or `Content-Disposition` header via `list_network_requests`)
+- [ ] **Evaluate** clipboard content after clicking "Copy Citation" on a citation card (`evaluate_script` — `navigator.clipboard.readText()`)
+- [ ] **Verify** exported BibTeX content is valid (contains `@article{` or `@inproceedings{` etc.)
+- [ ] **Verify** no console errors, no failed network requests
 
 ---
 
@@ -3171,20 +3328,69 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 - [ ] Task 50: Toggle component using existing shadcn theme vars in `globals.css`
 - [ ] Task 51: CSS filter on PDF canvas for dark/sepia reading modes
 
+### E2E Gate — Phase 4.0
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to any page (library or reader)
+- [ ] **Snapshot** → verify toggle component is visible in the UI
+- [ ] **Click** dark mode toggle → verify `<html>` has `class="dark"` or `data-theme="dark"` (`evaluate_script`)
+- [ ] **Screenshot** in dark mode for visual review
+- [ ] **Navigate** to reader → verify PDF canvas has CSS filter applied (check `getComputedStyle` via `evaluate_script`)
+- [ ] **Click** sepia mode (if available) → verify different filter
+- [ ] **Click** back to light mode → verify everything reverts
+- [ ] **Verify** no console errors
+
 ## Phase 4.1 — Full-Text Search
 
 - [ ] Task 52: PostgreSQL FTS across library (document titles, content)
 - [ ] Task 53: In-document search using PDF.js built-in search API
+
+### E2E Gate — Phase 4.1
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to `/library`
+- [ ] **Fill** search bar with a known document title → verify results filter in real-time
+- [ ] **Fill** search bar with content from inside a document → verify full-text results appear
+- [ ] **Click** a search result → verify it navigates to the correct document/page
+- [ ] **Navigate** to reader → open in-document search (Ctrl+F or search icon)
+- [ ] **Fill** search term → verify PDF.js highlights matching text on the page
+- [ ] **Click** next/previous arrows → verify navigation between matches
+- [ ] **Verify** no console errors, no failed network requests
 
 ## Phase 4.2 — Split View & Reading Memory
 
 - [ ] Task 54: Side-by-side PDF tab view
 - [ ] Task 55: Remember last reading position per document (localStorage + DB sync)
 
+### E2E Gate — Phase 4.2
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to reader with a document
+- [ ] **Click** split view button → verify two PDF panes render side-by-side
+- [ ] **Snapshot** → verify both panes have independent scroll and page controls
+- [ ] **Navigate** pages in one pane → verify the other pane is unaffected
+- [ ] **Scroll** to page 5 in the document → **Navigate away** to `/library` → **Navigate back** to the same document → verify it resumes at page 5 (`evaluate_script` to check scroll position or page number)
+- [ ] **Evaluate** `localStorage` for reading position entry (`evaluate_script`)
+- [ ] **Verify** no console errors, no failed network requests
+
 ## Phase 4.3 — OAuth & Cloud Key Sync
 
 - [ ] Task 56: Better Auth OAuth plugins (Google, GitHub)
 - [ ] Task 57: Cloud key sync across devices
+
+### E2E Gate — Phase 4.3
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to login page
+- [ ] **Snapshot** → verify Google and GitHub OAuth buttons are visible
+- [ ] **Click** Google OAuth button → verify redirect to OAuth provider begins (check `list_network_requests` for redirect)
+- [ ] **Navigate** to `/settings/api-keys` → verify existing keys display
+- [ ] **Evaluate** that key sync indicator shows sync status (synced/pending) via `evaluate_script`
+- [ ] **Verify** no console errors, no failed network requests
 
 ## Phase 4.4 — Performance & Production
 
@@ -3194,13 +3400,34 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 - [ ] Task 61: Sentry error tracking
 - [ ] Task 62: Virtual page rendering for large PDFs (only render visible + buffer)
 
+### E2E Gate — Phase 4.4
+
+Using Chrome DevTools MCP:
+
+- [ ] **Navigate** to `/library` → upload a large PDF (50+ pages)
+- [ ] **Verify** upload completes via `list_network_requests` (no timeouts, 200 response)
+- [ ] **Navigate** to reader with the large PDF → verify initial render is fast
+- [ ] **Evaluate** that only visible pages + buffer are rendered in the DOM (`evaluate_script` — count `.react-pdf__Page` elements, should be << total pages)
+- [ ] **Scroll** rapidly through the document → verify pages render on demand, no blank gaps
+- [ ] **Run** `performance_start_trace` → scroll through 20 pages → `performance_stop_trace` → `performance_analyze_insight` to check for jank
+- [ ] **Verify** no console errors (especially rate-limit 429s from API routes)
+- [ ] **Screenshot** performance trace summary
+
 ---
 
 ## Verification Protocol
 
 After each sub-phase:
 1. `npm run build` — zero TypeScript errors
-2. `npm run dev` — feature works in browser
+2. `npm run dev` — dev server starts without warnings
 3. `docker compose up -d` — Postgres (pgvector) is the only required service
-4. Manual test acceptance criteria per task
-5. Commit with descriptive message
+4. **TDD compliance** — every new function/route handler has a failing test written first, watched fail, then made green (see TDD skill)
+5. **Chrome DevTools E2E gate** — run the phase's E2E gate checklist using Chrome DevTools MCP:
+   - `navigate_page` to the feature
+   - `take_snapshot` to verify structure
+   - Interact (`click`, `fill`, `type_text`) to test golden path + edge cases
+   - `list_console_messages` — zero errors
+   - `list_network_requests` — zero 4xx/5xx
+   - `take_screenshot` for visual verification
+6. **No phase is marked DONE until its E2E gate passes**
+7. Commit with descriptive message
