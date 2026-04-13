@@ -3,6 +3,7 @@
 import { memo, useState } from "react";
 import { Page } from "react-pdf";
 import { HighlightLayer } from "./highlight-layer";
+import { UserHighlightLayer, type UserHighlight } from "./user-highlight-layer";
 import type { MarkerRect } from "./pdf-viewer";
 
 interface PdfPageProps {
@@ -10,6 +11,7 @@ interface PdfPageProps {
   width: number;
   zoom: number;
   markers?: MarkerRect[];
+  userHighlights?: UserHighlight[];
 }
 
 export const PdfPage = memo(function PdfPage({
@@ -17,6 +19,7 @@ export const PdfPage = memo(function PdfPage({
   width,
   zoom,
   markers = [],
+  userHighlights,
 }: PdfPageProps) {
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
@@ -37,6 +40,15 @@ export const PdfPage = memo(function PdfPage({
       {naturalSize && markers.length > 0 && (
         <HighlightLayer
           markers={markers}
+          naturalWidth={naturalSize.width}
+          naturalHeight={naturalSize.height}
+          displayWidth={displayWidth}
+        />
+      )}
+      {naturalSize && (userHighlights?.length ?? 0) > 0 && (
+        <UserHighlightLayer
+          highlights={userHighlights!}
+          pageNumber={pageNumber}
           naturalWidth={naturalSize.width}
           naturalHeight={naturalSize.height}
           displayWidth={displayWidth}

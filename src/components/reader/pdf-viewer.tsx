@@ -5,6 +5,7 @@ import { Document, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { PdfPage } from "./pdf-page";
+import type { UserHighlight } from "./user-highlight-layer";
 import { useReaderState } from "@/hooks/use-reader-state";
 import { usePdfTextSelection } from "@/hooks/use-pdf-text-selection";
 
@@ -36,9 +37,10 @@ interface PdfViewerProps {
   url: string;
   containerRef?: React.RefObject<HTMLDivElement | null>;
   markers?: MarkerRect[];
+  userHighlights?: UserHighlight[];
 }
 
-export function PdfViewer({ url, containerRef: externalRef, markers = [] }: PdfViewerProps) {
+export function PdfViewer({ url, containerRef: externalRef, markers = [], userHighlights = [] }: PdfViewerProps) {
   usePdfTextSelection();
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
@@ -202,6 +204,7 @@ export function PdfViewer({ url, containerRef: externalRef, markers = [] }: PdfV
                     width={containerWidth}
                     zoom={zoom}
                     markers={markers.filter((m) => m.pageNumber === pageNumber)}
+                    userHighlights={userHighlights.filter((h) => (h.rects ?? []).some((r) => r.page === pageNumber))}
                   />
                 );
               }
