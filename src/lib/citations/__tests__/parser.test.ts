@@ -257,6 +257,195 @@ describe("extractCitations — reference parsing", () => {
 });
 
 // ---------------------------------------------------------------------------
+// REF_ENTRY_START_RE — [n] style (regression)
+// ---------------------------------------------------------------------------
+
+describe("extractCitations — [n] bracket-style bibliography (regression)", () => {
+  it("parses a single [1] entry", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "Some text with [1] marker." },
+        {
+          pageNumber: 2,
+          text: "References\n[1] Smith, J. A great paper. Nature 123, 45–67 (2020).",
+        },
+      ])
+    );
+    expect(result.references).toHaveLength(1);
+    expect(result.references[0].markerIndex).toBe(1);
+  });
+
+  it("parses multiple [n] entries", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "Body with [1] and [2] and [3]." },
+        {
+          pageNumber: 2,
+          text: "References\n[1] First, A. Title one. J. Foo 1, 2 (2001).\n[2] Second, B. Title two. J. Bar 3, 4 (2002).\n[3] Third, C. Title three. J. Baz 5, 6 (2003).",
+        },
+      ])
+    );
+    expect(result.references).toHaveLength(3);
+    expect(result.references.map((r) => r.markerIndex)).toEqual([1, 2, 3]);
+  });
+
+  it("parses three-digit [100] entry", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "See [100]." },
+        {
+          pageNumber: 2,
+          text: "References\n[100] Big, C. et al. Big paper. Science 999, 1 (2010).",
+        },
+      ])
+    );
+    expect(result.references).toHaveLength(1);
+    expect(result.references[0].markerIndex).toBe(100);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REF_ENTRY_START_RE — n. style (Vancouver / Nature)
+// ---------------------------------------------------------------------------
+
+describe("extractCitations — Vancouver/Nature n. style bibliography", () => {
+  it("parses a single '1.' entry", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "As shown in [1], this holds." },
+        {
+          pageNumber: 2,
+          text: "References\n1. Smith, J. et al. Title of paper. Nature 123, 45–67 (2020).",
+        },
+      ])
+    );
+    expect(result.references).toHaveLength(1);
+    expect(result.references[0].markerIndex).toBe(1);
+  });
+
+  it("parses multiple n. entries with the same markerIndex as [n] would", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "Body [1] [2]." },
+        {
+          pageNumber: 2,
+          text: "References\n1. Smith, J. et al. Title of paper. Nature 123, 45–67 (2020).\n2. Other, A.B. & Foo, B. Title. Science 456, 78–90 (2019).",
+        },
+      ])
+    );
+    expect(result.references).toHaveLength(2);
+    expect(result.references[0].markerIndex).toBe(1);
+    expect(result.references[1].markerIndex).toBe(2);
+  });
+
+  it("parses a two-digit '10.' entry (not confused with DOI prefix)", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "See [10]." },
+        {
+          pageNumber: 2,
+          text: "References\n10. Jones, X. Multi-digit entry. Cell 10, 10–20 (2015).",
+        },
+      ])
+    );
+    expect(result.references).toHaveLength(1);
+    expect(result.references[0].markerIndex).toBe(10);
+  });
+
+  it("parses a three-digit '123.' entry", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "Marker [123]." },
+        {
+          pageNumber: 2,
+          text: "References\n123. Big, C. et al. Long numbered entry. Science 999, 1 (2010).",
+        },
+      ])
+    );
+    expect(result.references).toHaveLength(1);
+    expect(result.references[0].markerIndex).toBe(123);
+  });
+
+  it("rawText includes the full entry text", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "[1]" },
+        {
+          pageNumber: 2,
+          text: "References\n1. Smith, J. et al. Title of paper. Nature 123, 45–67 (2020).",
+        },
+      ])
+    );
+    expect(result.references[0].rawText).toContain("Smith, J. et al.");
+  });
+
+  it("year extraction works for n. style entry", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "[1]" },
+        {
+          pageNumber: 2,
+          text: "References\n1. Smith, J. et al. Title of paper. Nature 123, 45–67 (2020).",
+        },
+      ])
+    );
+    expect(result.references[0].year).toBe("2020");
+  });
+
+  it("DOI extraction works for n. style entry", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "[1]" },
+        {
+          pageNumber: 2,
+          text: "References\n1. Smith, J. et al. Title. Nature 123, 45 (2020). https://doi.org/10.1038/nature12345",
+        },
+      ])
+    );
+    expect(result.references[0].doi).toBe("10.1038/nature12345");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DOI disambiguation edge cases
+// ---------------------------------------------------------------------------
+
+describe("extractCitations — DOI disambiguation edge cases", () => {
+  it("does NOT treat '10.1038/nature...' line as a reference-entry start", () => {
+    // A bare DOI line starting with 10.xxxx/... must NOT be parsed as entry 10
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "See [1]." },
+        {
+          pageNumber: 2,
+          text: "References\n1. Smith, J. et al. Title. Nature 123, 45 (2020). https://doi.org/10.1038/nature12345\n10.1038/nature99999 should not be a new entry",
+        },
+      ])
+    );
+    // Only entry 1 should be found; the bare DOI line must not create entry 10
+    expect(result.references).toHaveLength(1);
+    expect(result.references[0].markerIndex).toBe(1);
+  });
+
+  it("does NOT treat '10.1000/xyz' stray DOI line as a new entry", () => {
+    const result = extractCitations(
+      pages([
+        { pageNumber: 1, text: "See [1] and [2]." },
+        {
+          pageNumber: 2,
+          text: "References\n1. Smith, J. et al. First entry. Nature 1, 1 (2020).\n10.1000/xyz123 continuation or stray DOI line\n2. Other, A. Second entry. Science 2, 2 (2019).",
+        },
+      ])
+    );
+    // The stray DOI line should be absorbed into entry 1 as a continuation
+    expect(result.references).toHaveLength(2);
+    expect(result.references[0].markerIndex).toBe(1);
+    expect(result.references[1].markerIndex).toBe(2);
+    expect(result.references[0].rawText).toContain("10.1000/xyz123");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Edge cases
 // ---------------------------------------------------------------------------
 

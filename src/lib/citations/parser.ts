@@ -35,8 +35,15 @@ const MARKER_RE = /\[(\d{1,3})\]/g;
 // Bibliography section header (case-insensitive)
 const BIB_HEADER_RE = /^(references|bibliography|works cited|literature cited)\s*$/im;
 
-// A line that starts a new numbered reference entry: [n] or n. (at line start)
-const REF_ENTRY_START_RE = /^\[(\d{1,3})\]\s+/;
+// A line that starts a new numbered reference entry.
+// Accepts both:
+//   [n]  — bracket style (IEEE/APA/Chicago): [1] Smith …
+//   n.   — Vancouver/AMA/Nature style:        1. Smith …
+//
+// DOI disambiguation: the n. branch uses a negative lookahead `(?!\d|\/)` so
+// that lines like "10.1038/nature…" (digit-dot-digit) are NOT treated as
+// entry-start lines — they get absorbed as continuation text instead.
+const REF_ENTRY_START_RE = /^(?:\[(\d{1,3})\]\s+|(\d{1,3})\.(?!\d|\/)[ \t]+)/;
 
 // Year: 4 digits in range 1900–2099. Uses `g` flag — consume only via matchAll (resets lastIndex).
 const YEAR_RE = /\b(1[9]\d{2}|20\d{2})\b/g;
@@ -141,7 +148,8 @@ function parseBibLines(lines: string[]): ParsedReference[] {
     const startMatch = trimmed.match(REF_ENTRY_START_RE);
     if (startMatch) {
       if (current) entries.push(current);
-      const idx = parseInt(startMatch[1], 10);
+      // Group 1 = bracket style [n], group 2 = Vancouver style n.
+      const idx = parseInt(startMatch[1] ?? startMatch[2], 10);
       // Skip out-of-range
       if (idx < 1 || idx > 999) {
         current = null;
