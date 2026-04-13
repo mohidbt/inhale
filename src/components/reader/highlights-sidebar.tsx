@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
 
 interface Highlight {
   id: number;
@@ -8,6 +9,7 @@ interface Highlight {
   textContent: string;
   color: string;
   note: string | null;
+  comment: string | null;
   createdAt: string;
 }
 
@@ -17,15 +19,17 @@ const COLOR_MAP: Record<string, string> = {
   blue: "border-l-blue-400",
   pink: "border-l-pink-400",
   orange: "border-l-orange-400",
+  amber: "border-l-amber-400",
 };
 
 interface HighlightsSidebarProps {
   documentId: number;
   open: boolean;
   refreshKey?: number;
+  onAskAi?: (text: string) => void;
 }
 
-export function HighlightsSidebar({ documentId, open, refreshKey = 0 }: HighlightsSidebarProps) {
+export function HighlightsSidebar({ documentId, open, refreshKey = 0, onAskAi }: HighlightsSidebarProps) {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +61,7 @@ export function HighlightsSidebar({ documentId, open, refreshKey = 0 }: Highligh
   if (!open) return null;
 
   return (
-    <div className="flex w-72 flex-col border-l bg-background">
+    <div className="flex h-full w-full flex-col bg-background">
       <div className="flex items-center justify-between border-b p-4">
         <h2 className="text-sm font-semibold">Highlights</h2>
       </div>
@@ -77,7 +81,24 @@ export function HighlightsSidebar({ documentId, open, refreshKey = 0 }: Highligh
                 className={`border-l-4 ${COLOR_MAP[h.color] ?? "border-l-gray-300"} py-1 pl-3`}
               >
                 <p className="line-clamp-3 text-xs leading-relaxed">{h.textContent}</p>
-                <p className="mt-1 text-[10px] text-muted-foreground">Page {h.pageNumber}</p>
+                {h.comment && (
+                  <p className="mt-1 rounded bg-muted/50 px-2 py-1 text-xs italic text-muted-foreground">
+                    {h.comment}
+                  </p>
+                )}
+                <div className="mt-1 flex items-center justify-between">
+                  <p className="text-[10px] text-muted-foreground">Page {h.pageNumber}</p>
+                  {onAskAi && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 px-2 text-[10px]"
+                      onClick={() => onAskAi(h.textContent)}
+                    >
+                      Ask AI
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

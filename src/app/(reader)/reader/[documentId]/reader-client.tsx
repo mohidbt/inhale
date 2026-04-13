@@ -59,6 +59,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [findOpen, setFindOpen] = useState(false);
   const [matchCase, setMatchCase] = useState(false);
   const find = usePdfFind(pdfDoc);
+  const [chatSeed, setChatSeed] = useState<{ text: string; nonce: number } | null>(null);
 
   // Citations
   const [citations, setCitations] = useState<CitationWithStatus[]>([]);
@@ -151,12 +152,12 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
     }
   }, [documentId, patchCitation]);
 
-  const handleHighlight = useCallback(
-    async (color: HighlightColor) => {
-      if (!selection) return;
+  const saveHighlight = useCallback(
+    async (color: HighlightColor): Promise<number | null> => {
+      if (!selection) return null;
       setSaveError(null);
       try {
-        await fetch(`/api/documents/${documentId}/highlights`, {
+        const res = await fetch(`/api/documents/${documentId}/highlights`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -168,14 +169,52 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             rects: selection.rects,
           }),
         });
-        setRefreshKey((k) => k + 1);
-        clearSelection();
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { highlight: { id: number } };
+        return data.highlight.id;
       } catch {
         setSaveError("Failed to save highlight. Please try again.");
+        return null;
       }
     },
-    [selection, documentId, clearSelection]
+    [selection, documentId]
   );
+
+  const handleHighlight = useCallback(
+    async (color: HighlightColor) => {
+      await saveHighlight(color);
+      setRefreshKey((k) => k + 1);
+      clearSelection();
+    },
+    [saveHighlight, clearSelection]
+  );
+
+  const handleComment = useCallback(
+    async (text: string) => {
+      const id = await saveHighlight("yellow");
+      if (id && text.trim()) {
+        try {
+          await fetch(`/api/documents/${documentId}/highlights/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ comment: text }),
+          });
+        } catch {
+          setSaveError("Failed to save comment.");
+        }
+      }
+      setRefreshKey((k) => k + 1);
+      clearSelection();
+    },
+    [saveHighlight, documentId, clearSelection]
+  );
+
+  const handleAskAi = useCallback(() => {
+    if (!selection) return;
+    setChatSeed({ text: selection.text, nonce: Date.now() });
+    setChatOpen(true);
+    clearSelection();
+  }, [selection, clearSelection]);
 
   useEffect(() => {
     if (!saveError) return;
@@ -293,7 +332,15 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         />
         {sidebarOpen && (
           <DockableSidebar id="highlights">
-            <HighlightsSidebar documentId={documentId} open={sidebarOpen} refreshKey={refreshKey} />
+            <HighlightsSidebar
+              documentId={documentId}
+              open={sidebarOpen}
+              refreshKey={refreshKey}
+              onAskAi={(text) => {
+                setChatSeed({ text, nonce: Date.now() });
+                setChatOpen(true);
+              }}
+            />
           </DockableSidebar>
         )}
         <CommentThread
@@ -307,6 +354,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
               documentId={documentId}
               open={chatOpen}
               scrollContainerRef={pdfScrollRef}
+              seed={chatSeed}
             />
           </DockableSidebar>
         )}
@@ -335,6 +383,8 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             rect={selection.rect}
             onHighlight={handleHighlight}
             onDismiss={clearSelection}
+            onComment={handleComment}
+            onAskAi={handleAskAi}
           />
         )}
         {activeCitation && clickPosition && (

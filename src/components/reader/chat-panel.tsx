@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useChat } from "@/hooks/use-chat";
 import { useViewportTracking } from "@/hooks/use-viewport-tracking";
 import { ChatMessage } from "./chat-message";
@@ -10,10 +10,18 @@ interface ChatPanelProps {
   documentId: number;
   open: boolean;
   scrollContainerRef: React.RefObject<HTMLElement | null>;
+  seed?: { text: string; nonce: number } | null;
 }
 
-export function ChatPanel({ documentId, open, scrollContainerRef }: ChatPanelProps) {
+export function ChatPanel({ documentId, open, scrollContainerRef, seed }: ChatPanelProps) {
   const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!seed) return;
+    setInput(seed.text);
+    inputRef.current?.focus();
+  }, [seed]);
   const viewportRef = useViewportTracking(scrollContainerRef);
   const { messages, sources, streaming, error, sendMessage } = useChat(documentId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -63,6 +71,7 @@ export function ChatPanel({ documentId, open, scrollContainerRef }: ChatPanelPro
       {error && <p className="px-3 py-1 text-xs text-red-500">{error}</p>}
       <form onSubmit={handleSubmit} className="p-3 border-t flex gap-2">
         <Input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask about this paper..."
