@@ -190,6 +190,7 @@ export function PdfViewer({ url, containerRef: externalRef, markers = [] }: PdfV
             file={url}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={(err) => setLoadError(err)}
+            onItemClick={() => {/* suppress internal-link navigation — handled by useCitationClick */}}
           >
             {Array.from({ length: totalPages }, (_, i) => {
               const pageNumber = i + 1;

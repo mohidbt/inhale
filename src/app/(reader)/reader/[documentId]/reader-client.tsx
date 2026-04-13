@@ -73,6 +73,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
     y1: number;
   };
   const [markers, setMarkers] = useState<MarkerRect[]>([]);
+  const [citationsRefreshKey, setCitationsRefreshKey] = useState(0);
 
   useEffect(() => {
     setCitationsLoading(true);
@@ -81,14 +82,14 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
       .then((data: { citations: CitationWithStatus[] }) => setCitations(data.citations))
       .catch(() => {/* non-fatal: citations just won't show */})
       .finally(() => setCitationsLoading(false));
-  }, [documentId]);
+  }, [documentId, citationsRefreshKey]);
 
   useEffect(() => {
     fetch(`/api/documents/${documentId}/citations/markers`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: { markers: MarkerRect[] }) => setMarkers(data.markers))
       .catch(() => {/* non-fatal: overlays just won't show */});
-  }, [documentId]);
+  }, [documentId, citationsRefreshKey]);
 
   const patchCitation = useCallback(
     (citationId: number, patch: Partial<CitationWithStatus>) => {
@@ -238,6 +239,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
           open={citationsOpen}
           citations={citations}
           loading={citationsLoading}
+          onExtracted={() => setCitationsRefreshKey((k) => k + 1)}
         />
         {selection && (
           <SelectionToolbar

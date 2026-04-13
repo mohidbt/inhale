@@ -36,13 +36,15 @@ export function HighlightLayer({
         const cssTop = (naturalHeight - marker.y1) * scale;
         const cssLeft = marker.x0 * scale;
         const cssWidth = (marker.x1 - marker.x0) * scale;
-        const cssHeight = (marker.y1 - marker.y0) * scale;
+        // PDF annotation rects span the full text line height; the superscript
+        // glyph sits in the upper ~55 % of that rect.
+        const cssHeight = (marker.y1 - marker.y0) * scale * 0.55;
 
         return (
           <div
             key={marker.id}
             data-marker-index={marker.markerIndex}
-            className="absolute rounded-[2px] bg-primary/10 ring-1 ring-primary/30 hover:bg-primary/20 cursor-pointer transition-colors"
+            className="absolute rounded bg-foreground/10 cursor-pointer transition-colors hover:bg-foreground/20"
             style={{
               top: cssTop,
               left: cssLeft,
