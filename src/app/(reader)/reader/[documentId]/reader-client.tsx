@@ -158,6 +158,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             startOffset: selection.startOffset,
             endOffset: selection.endOffset,
             color,
+            rects: selection.rects,
           }),
         });
         setRefreshKey((k) => k + 1);

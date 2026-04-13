@@ -26,7 +26,12 @@ export const PdfPage = memo(function PdfPage({
   const displayWidth = width * zoom;
 
   return (
-    <div data-page-number={pageNumber} className="relative mb-4 shadow-md">
+    <div
+      data-page-number={pageNumber}
+      data-natural-width={naturalSize?.width}
+      data-natural-height={naturalSize?.height}
+      className="relative mb-4 shadow-md"
+    >
       <Page
         pageNumber={pageNumber}
         width={displayWidth}

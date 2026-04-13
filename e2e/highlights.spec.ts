@@ -112,6 +112,30 @@ test.describe("Highlights API", () => {
     const res = await page.request.get("/api/documents/1/highlights");
     expect(res.status()).toBe(401);
   });
+
+  test("POST creates highlight with rects; GET returns them", async ({ page }) => {
+    await signUpAndLogin(page);
+    const docId = await uploadDocument(page);
+    const base = `/api/documents/${docId}/highlights`;
+
+    const createRes = await page.request.post(base, {
+      data: {
+        pageNumber: 1,
+        textContent: "rect-test",
+        startOffset: 0,
+        endOffset: 9,
+        color: "yellow",
+        rects: [{ page: 1, x0: 10, y0: 100, x1: 50, y1: 110 }],
+      },
+    });
+    expect(createRes.status()).toBe(201);
+
+    const listRes = await page.request.get(base);
+    const body = await listRes.json();
+    const latest = body.highlights.find((h: { textContent: string }) => h.textContent === "rect-test");
+    expect(latest).toBeDefined();
+    expect(latest.rects).toEqual([{ page: 1, x0: 10, y0: 100, x1: 50, y1: 110 }]);
+  });
 });
 
 test.describe("Comments API", () => {

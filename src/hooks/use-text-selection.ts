@@ -8,6 +8,7 @@ interface TextSelection {
   startOffset: number;
   endOffset: number;
   rect: { top: number; left: number; width: number; height: number };
+  rects: { page: number; x0: number; y0: number; x1: number; y1: number }[];
 }
 
 export function useTextSelection() {
@@ -27,8 +28,23 @@ export function useTextSelection() {
     const rect = { top: domRect.top, left: domRect.left, width: domRect.width, height: domRect.height };
 
     // Find which PDF page this selection is on via the data-page-number attribute
-    const pageEl = range.startContainer.parentElement?.closest("[data-page-number]");
+    const pageEl = range.startContainer.parentElement?.closest<HTMLElement>("[data-page-number]");
     const pageNumber = pageEl ? Number(pageEl.getAttribute("data-page-number")) : 1;
+
+    const naturalWidth = pageEl ? Number(pageEl.getAttribute("data-natural-width")) : NaN;
+    const naturalHeight = pageEl ? Number(pageEl.getAttribute("data-natural-height")) : NaN;
+    let rects: TextSelection["rects"] = [];
+    if (pageEl && Number.isFinite(naturalWidth) && naturalWidth > 0 && Number.isFinite(naturalHeight) && naturalHeight > 0) {
+      const pageBox = pageEl.getBoundingClientRect();
+      const scale = pageBox.width / naturalWidth;
+      rects = Array.from(range.getClientRects()).map((r) => ({
+        page: pageNumber,
+        x0: (r.left - pageBox.left) / scale,
+        x1: (r.right - pageBox.left) / scale,
+        y0: naturalHeight - (r.bottom - pageBox.top) / scale,
+        y1: naturalHeight - (r.top - pageBox.top) / scale,
+      }));
+    }
 
     setSelection({
       text,
@@ -36,6 +52,7 @@ export function useTextSelection() {
       startOffset: range.startOffset,
       endOffset: range.endOffset,
       rect,
+      rects,
     });
   }, []);
 
