@@ -70,46 +70,6 @@ test("outline sidebar fetches and displays document sections", async ({ page }) 
   await expect(outlineSidebar.getByText("Page 1")).toBeVisible();
 });
 
-test("explain panel streams explanation for selected text", async ({ page }) => {
-  await signUpAndLogin(page);
-  const { id: docId } = await uploadTestPdf(page);
-
-  await page.route("**/api/ai/explain", async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-      },
-      body: "data: This is a test explanation.\n\ndata: [DONE]\n\n",
-    });
-  });
-
-  await page.goto(`/reader/${docId}`);
-  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
-  await page.locator(".react-pdf__Page__textContent").waitFor({ timeout: 10_000 });
-
-  await page.getByRole("button", { name: "Explain" }).click();
-  const conceptsPanel = page.getByTestId("concepts-panel");
-  await expect(conceptsPanel.getByRole("heading", { name: "Explain" })).toBeVisible();
-  await expect(
-    conceptsPanel.getByText("Select text in the document to get an explanation.")
-  ).toBeVisible();
-
-  // Simulate text selection: triple-click to select all text in first PDF span
-  const firstSpan = page.locator(".react-pdf__Page__textContent span").first();
-  await firstSpan.click({ clickCount: 3 });
-  // Also dispatch selectionchange in case click alone doesn't trigger it
-  await page.evaluate(() => {
-    document.dispatchEvent(new Event("selectionchange"));
-  });
-
-  await expect(conceptsPanel.getByText("This is a test explanation.")).toBeVisible({
-    timeout: 8_000,
-  });
-});
-
 test("chat panel sends question and streams answer with source badges", async ({ page }) => {
   await signUpAndLogin(page);
   const { id: docId } = await uploadTestPdf(page);

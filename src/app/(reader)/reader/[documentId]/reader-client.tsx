@@ -9,7 +9,6 @@ import { CommentThread } from "@/components/reader/comment-thread";
 import { CommentInput } from "@/components/reader/comment-input";
 import { ChatPanel } from "@/components/reader/chat-panel";
 import { OutlineSidebar, type PdfOutlineItem } from "@/components/reader/outline-sidebar";
-import { ConceptsPanel } from "@/components/reader/concepts-panel";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
 import { CitationsSidebar } from "@/components/reader/citations-sidebar";
 import { DockableSidebar } from "@/components/reader/dockable-sidebar";
@@ -50,7 +49,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [commentSidebarOpen, setCommentSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
-  const [conceptsOpen, setConceptsOpen] = useState(false);
   const [citationsOpen, setCitationsOpen] = useState(false);
   const pdfScrollRef = useRef<HTMLDivElement>(null);
   const { selection, clearSelection } = useTextSelection();
@@ -256,8 +254,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         onToggleChat={() => setChatOpen((o) => !o)}
         outlineOpen={outlineOpen}
         onToggleOutline={() => setOutlineOpen((o) => !o)}
-        conceptsOpen={conceptsOpen}
-        onToggleConcepts={() => setConceptsOpen((o) => !o)}
         citationsOpen={citationsOpen}
         onToggleCitations={() => setCitationsOpen((o) => !o)}
       />
@@ -323,10 +319,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             />
           </DockableSidebar>
         )}
-        <ConceptsPanel
-          selectedText={selection?.text ?? ""}
-          open={conceptsOpen}
-        />
         {citationsOpen && (
           <DockableSidebar id="citations">
             <CitationsSidebar

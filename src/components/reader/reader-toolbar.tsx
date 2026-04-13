@@ -17,8 +17,6 @@ interface ReaderToolbarProps {
   onToggleChat?: () => void;
   outlineOpen?: boolean;
   onToggleOutline?: () => void;
-  conceptsOpen?: boolean;
-  onToggleConcepts?: () => void;
   citationsOpen?: boolean;
   onToggleCitations?: () => void;
 }
@@ -35,8 +33,6 @@ export function ReaderToolbar({
   onToggleChat,
   outlineOpen,
   onToggleOutline,
-  conceptsOpen,
-  onToggleConcepts,
   citationsOpen,
   onToggleCitations,
 }: ReaderToolbarProps) {
@@ -125,15 +121,6 @@ export function ReaderToolbar({
             onClick={onToggleOutline}
           >
             Outline
-          </Button>
-        )}
-        {onToggleConcepts && (
-          <Button
-            variant={conceptsOpen ? "secondary" : "ghost"}
-            size="sm"
-            onClick={onToggleConcepts}
-          >
-            Explain
           </Button>
         )}
         {onToggleCitations && (
