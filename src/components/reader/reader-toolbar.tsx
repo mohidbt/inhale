@@ -43,6 +43,19 @@ export function ReaderToolbar({
   const currentPage = useReaderState((s) => s.currentPage);
   const totalPages = useReaderState((s) => s.totalPages);
   const setScrollTargetPage = useReaderState((s) => s.setScrollTargetPage);
+  const collapsed = useReaderState((s) => s.toolbarCollapsed);
+  const setCollapsed = useReaderState((s) => s.setToolbarCollapsed);
+
+  if (collapsed) {
+    return (
+      <div
+        className="h-2 w-full cursor-pointer border-b bg-muted/40 transition-all hover:h-12 hover:bg-background"
+        onMouseEnter={() => setCollapsed(false)}
+        aria-label="Expand toolbar"
+        role="button"
+      />
+    );
+  }
 
   return (
     <header className="flex h-12 items-center justify-between border-b bg-background px-4">
@@ -132,6 +145,14 @@ export function ReaderToolbar({
             Citations
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setCollapsed(true)}
+          aria-label="Collapse toolbar"
+        >
+          ⇡
+        </Button>
       </div>
     </header>
   );

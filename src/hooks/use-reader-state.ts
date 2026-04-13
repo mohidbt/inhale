@@ -5,6 +5,7 @@ interface ReaderState {
   totalPages: number;
   scrollTargetPage: number | null;
   zoom: number;
+  toolbarCollapsed: boolean;
   setCurrentPage: (page: number) => void;
   setTotalPages: (total: number) => void;
   setScrollTargetPage: (page: number | null) => void;
@@ -12,6 +13,7 @@ interface ReaderState {
   zoomIn: () => void;
   zoomOut: () => void;
   resetZoom: () => void;
+  setToolbarCollapsed: (v: boolean) => void;
 }
 
 export const useReaderState = create<ReaderState>((set) => ({
@@ -19,6 +21,8 @@ export const useReaderState = create<ReaderState>((set) => ({
   totalPages: 0,
   scrollTargetPage: null,
   zoom: 1.0,
+  toolbarCollapsed:
+    typeof window !== "undefined" && localStorage.getItem("toolbarCollapsed") === "1",
   setCurrentPage: (page) =>
     set((s) => ({
       currentPage: Math.max(1, Math.min(s.totalPages || 1, page)),
@@ -34,4 +38,10 @@ export const useReaderState = create<ReaderState>((set) => ({
   zoomIn: () => set((s) => ({ zoom: Math.min(3.0, s.zoom + 0.25) })),
   zoomOut: () => set((s) => ({ zoom: Math.max(0.5, s.zoom - 0.25) })),
   resetZoom: () => set({ zoom: 1.0 }),
+  setToolbarCollapsed: (v) => {
+    set({ toolbarCollapsed: v });
+    if (typeof window !== "undefined") {
+      localStorage.setItem("toolbarCollapsed", v ? "1" : "0");
+    }
+  },
 }));
