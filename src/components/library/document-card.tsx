@@ -32,7 +32,7 @@ export function DocumentCard({
   const [deleting, setDeleting] = useState(false);
   const router = useRouter();
 
-  const formattedDate = new Date(createdAt).toLocaleDateString(undefined, {
+  const formattedDate = new Date(createdAt).toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
