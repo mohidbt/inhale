@@ -45,9 +45,9 @@ export const PdfPage = memo(function PdfPage({
           displayWidth={displayWidth}
         />
       )}
-      {naturalSize && (userHighlights?.length ?? 0) > 0 && (
+      {naturalSize && userHighlights && userHighlights.length > 0 && (
         <UserHighlightLayer
-          highlights={userHighlights!}
+          highlights={userHighlights}
           pageNumber={pageNumber}
           naturalWidth={naturalSize.width}
           naturalHeight={naturalSize.height}

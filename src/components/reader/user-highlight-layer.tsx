@@ -36,14 +36,13 @@ export function UserHighlightLayer({ highlights, pageNumber, naturalWidth, natur
             <div
               key={`${h.id}-${idx}`}
               data-highlight-id={h.id}
-              className="absolute rounded-sm transition-shadow hover:ring-2 hover:ring-primary/50"
+              className="absolute rounded-sm"
               style={{
                 top:    (naturalHeight - r.y1) * scale,
                 left:   r.x0 * scale,
                 width:  (r.x1 - r.x0) * scale,
                 height: (r.y1 - r.y0) * scale,
                 background: COLOR_BG[h.color],
-                pointerEvents: "auto",
               }}
             />
           ))
