@@ -1,15 +1,33 @@
 "use client";
 
+import { useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
 import type { CitationWithStatus } from "@/components/reader/citation-card";
+
+// Strip leading "[n] " or "n. " marker prefix that parseBibLines stores in rawText.
+const MARKER_PREFIX_RE = /^(?:\[\d{1,3}\]\s+|\d{1,3}\.\s+)/;
 
 interface CitationsSidebarProps {
   documentId: number;
   open: boolean;
   citations: CitationWithStatus[];
   loading: boolean;
+  onExtracted?: () => void;
 }
 
-export function CitationsSidebar({ open, citations, loading }: CitationsSidebarProps) {
+export function CitationsSidebar({ documentId, open, citations, loading, onExtracted }: CitationsSidebarProps) {
+  const [extracting, setExtracting] = useState(false);
+
+  const handleExtract = useCallback(async () => {
+    setExtracting(true);
+    try {
+      await fetch(`/api/documents/${documentId}/citations/extract`, { method: "POST" });
+      onExtracted?.();
+    } finally {
+      setExtracting(false);
+    }
+  }, [documentId, onExtracted]);
+
   if (!open) return null;
 
   return (
@@ -46,12 +64,39 @@ export function CitationsSidebar({ open, citations, loading }: CitationsSidebarP
             <p className="text-xs text-muted-foreground/70">
               This document may use a citation format not yet supported.
             </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              disabled={extracting}
+              onClick={handleExtract}
+            >
+              {extracting ? (
+                <>
+                  <span className="mr-2 h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+                  Extracting…
+                </>
+              ) : (
+                "Extract Citations"
+              )}
+            </Button>
           </div>
         )}
         {!loading && citations.length > 0 && (
           <div className="space-y-2">
             {citations.map((c) => {
-              const label = c.title ?? c.rawText ?? c.markerText;
+              // Prefer structured fields: authors (year) is clean even when rawText is
+              // garbled by two-column PDF layouts interleaving bibliography with body text.
+              // Fall back to a hard-capped rawText (120 chars) to avoid showing junk, then
+              // title, then markerText.
+              const structuredLabel =
+                c.authors && c.year
+                  ? `${c.authors} (${c.year})`
+                  : c.authors ?? null;
+              const rawLabel = c.rawText
+                ? c.rawText.replace(MARKER_PREFIX_RE, "").trim().slice(0, 120)
+                : null;
+              const label = structuredLabel ?? rawLabel ?? c.title ?? c.markerText;
               return (
                 <div
                   key={c.id}
