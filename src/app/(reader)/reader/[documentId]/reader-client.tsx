@@ -59,11 +59,30 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
     citations
   );
 
+  type MarkerRect = {
+    id: number;
+    referenceId: number;
+    markerIndex: number;
+    pageNumber: number;
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  };
+  const [markers, setMarkers] = useState<MarkerRect[]>([]);
+
   useEffect(() => {
     fetch(`/api/documents/${documentId}/citations`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: { citations: CitationWithStatus[] }) => setCitations(data.citations))
       .catch(() => {/* non-fatal: citations just won't show */});
+  }, [documentId]);
+
+  useEffect(() => {
+    fetch(`/api/documents/${documentId}/citations/markers`)
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: { markers: MarkerRect[] }) => setMarkers(data.markers))
+      .catch(() => {/* non-fatal: overlays just won't show */});
   }, [documentId]);
 
   const patchCitation = useCallback(
@@ -186,7 +205,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         </div>
       )}
       <div className="relative flex flex-1 overflow-hidden">
-        <PdfViewer url={url} containerRef={pdfScrollRef} />
+        <PdfViewer url={url} containerRef={pdfScrollRef} markers={markers} />
         <HighlightsSidebar documentId={documentId} open={sidebarOpen} refreshKey={refreshKey} />
         <CommentThread
           documentId={documentId}

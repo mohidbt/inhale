@@ -3,7 +3,8 @@ import path from "path";
 
 export default defineConfig({
   test: {
-    include: ["src/**/__tests__/**/*.test.ts"],
+    include: ["src/**/__tests__/**/*.test.{ts,tsx}"],
+    environment: "happy-dom",
   },
   resolve: {
     alias: {

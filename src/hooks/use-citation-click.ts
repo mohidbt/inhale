@@ -28,7 +28,25 @@ export function useCitationClick(
     if (!container) return;
 
     function handleClick(e: MouseEvent) {
-      // Use caretRangeFromPoint (WebKit/Blink) or caretPositionFromPoint (Firefox) for precise offset
+      // Primary: our own overlay div with data-marker-index
+      const markerEl = (e.target as Element).closest("[data-marker-index]");
+      if (markerEl) {
+        const idx = parseInt(markerEl.getAttribute("data-marker-index")!, 10);
+        const citation = citations.find((c) => c.markerIndex === idx);
+        if (citation) {
+          const domRect = markerEl.getBoundingClientRect();
+          const CARD_HEIGHT_ESTIMATE = 260;
+          const top =
+            domRect.bottom + 8 + CARD_HEIGHT_ESTIMATE > window.innerHeight
+              ? domRect.top - CARD_HEIGHT_ESTIMATE
+              : domRect.bottom + 8;
+          setActiveCitation(citation);
+          setClickPosition({ top, left: domRect.left });
+          return;
+        }
+      }
+
+      // Fallback: caretRangeFromPoint (WebKit/Blink) or caretPositionFromPoint (Firefox)
       type CaretPositionFromPoint = (x: number, y: number) => { offsetNode: Node; offset: number } | null;
       const docWithCaret = document as Document & { caretPositionFromPoint?: CaretPositionFromPoint };
 
