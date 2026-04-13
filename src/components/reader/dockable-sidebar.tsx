@@ -38,8 +38,10 @@ export function DockableSidebar({ id, defaultDock = "right", children }: Props) 
   const borderCls =
     dock === "right" ? "border-l" : dock === "left" ? "border-r" : "border-t";
   const handleCls = horizontal
-    ? "absolute top-0 h-1 w-full cursor-row-resize"
-    : "absolute top-0 w-1 h-full cursor-col-resize";
+    ? "absolute top-0 left-0 h-1 w-full cursor-row-resize"
+    : dock === "left"
+    ? "absolute top-0 right-0 w-1 h-full cursor-col-resize"
+    : "absolute top-0 left-0 w-1 h-full cursor-col-resize";
 
   return (
     <div className={`relative flex bg-background ${borderCls}`} style={rootStyle}>
