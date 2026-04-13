@@ -48,3 +48,8 @@ next-env.d.ts
 /test-results/
 /.playwright-mcp/
 .worktrees/
+/pdf-selection-*.png
+
+# claude runtime state (worktrees, lock files — not team-shared)
+/.claude/worktrees/
+/.claude/scheduled_tasks.lock

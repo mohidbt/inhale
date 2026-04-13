@@ -6,6 +6,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { PdfPage } from "./pdf-page";
 import { useReaderState } from "@/hooks/use-reader-state";
+import { usePdfTextSelection } from "@/hooks/use-pdf-text-selection";
 
 // Worker must be set in the same module as Document/Page usage (react-pdf requirement)
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -20,12 +21,25 @@ const A4_RATIO = 1.414;
 /** Bottom margin per page in px (matches mb-4 = 16px) */
 const PAGE_MARGIN = 16;
 
+export interface MarkerRect {
+  id: number;
+  referenceId: number;
+  markerIndex: number;
+  pageNumber: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 interface PdfViewerProps {
   url: string;
   containerRef?: React.RefObject<HTMLDivElement | null>;
+  markers?: MarkerRect[];
 }
 
-export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
+export function PdfViewer({ url, containerRef: externalRef, markers = [] }: PdfViewerProps) {
+  usePdfTextSelection();
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
   const [loadError, setLoadError] = useState<Error | null>(null);
@@ -176,6 +190,7 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
             file={url}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={(err) => setLoadError(err)}
+            onItemClick={() => {/* suppress internal-link navigation — handled by useCitationClick */}}
           >
             {Array.from({ length: totalPages }, (_, i) => {
               const pageNumber = i + 1;
@@ -186,6 +201,7 @@ export function PdfViewer({ url, containerRef: externalRef }: PdfViewerProps) {
                     pageNumber={pageNumber}
                     width={containerWidth}
                     zoom={zoom}
+                    markers={markers.filter((m) => m.pageNumber === pageNumber)}
                   />
                 );
               }

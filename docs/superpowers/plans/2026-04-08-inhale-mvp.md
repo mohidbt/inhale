@@ -6,7 +6,7 @@
 
 **Architecture:** Pure Next.js 16 App Router monorepo. CRUD, auth, AI/RAG, and document processing all run as Next.js route handlers and server actions — no separate Python service. Postgres 16 + pgvector for storage and vector search. Drizzle ORM owns the schema. SSE for AI streaming, WebSocket only for voice mode (Phase 3.2).
 
-**Tech Stack:** Next.js 16, React 19, Tailwind 4, shadcn/ui (nova), Better Auth, Drizzle ORM, react-pdf v9, Zustand, `@openrouter/sdk` (BYOK), pgvector (Postgres extension), Node.js crypto AES-256-GCM
+**Tech Stack:** Next.js 16, React 19, Tailwind 4, shadcn/ui (nova), Better Auth, Drizzle ORM, react-pdf v10, Zustand, `@openrouter/sdk` (BYOK), pgvector (Postgres extension), Node.js crypto AES-256-GCM
 
 > **Not using LangChain TS.** OpenRouter SDK's `callModel` + `tool()` + `stopWhen` covers v0 RAG and any future tool use. Revisit LangChain/LangGraph if/when multi-agent or human-in-the-loop workflows are actually needed.
 
@@ -32,11 +32,25 @@
 | **1.3 — Minimal RAG Chat** | DONE | `/api/documents/[id]/chat` — pgvector retrieval + viewport bias, SSE, conversation persistence, `conversationId` round-trip. Client BYOK fetch removed. + viewport page-awareness in system prompt. |
 | **E2E — Playwright test suite** | DONE | `e2e/ai-features.spec.ts` — 4 tests: upload→chunk API contract, outline sidebar (mocked), explain SSE (mocked), RAG chat turn (mocked). Added `data-testid` to `OutlineSidebar` + `ConceptsPanel` for stable selectors. Tests 2–4 use `page.route()` — no real OpenRouter key needed. |
 | **Hotfix — local DB schema drift** | DONE | Chat 500'd with `column "page_start" does not exist`. Root cause: local Postgres was out of sync with Phase 1.1's schema — `document_chunks` was missing `page_start`/`page_end`/`embedding` columns and the ivfflat index, and the pgvector extension had never been installed. Cause: Phase 1.1 edited `document-chunks.ts` but never ran `drizzle-kit generate`/`push`; `drizzle/0002_enable_pgvector.sql` was authored but not in the journal. Fix: built pgvector 0.8.2 from source against `postgresql@16` (brew's formula only ships pg17/pg18 binaries), then applied 4 raw SQL statements manually. DB now aligned. **E2E blind spot:** test 1 accepts `processingStatus: /^(ready\|failed)$/`, so silent chunking failures pass; tests 2–4 mock `/api/documents/*/chat` so the real SQL path is never exercised. No commit — all changes were DB-side. |
-| **Migration rebaseline — drift debt** | NEXT | `drizzle/` has only `0000_goofy_spencer_smythe.sql`, which predates chunking entirely. Every table since Phase 0.4+ (`document_chunks`, `document_sections`, `user_highlights`, `user_comments`, agent tables, pgvector extension) was created via ad-hoc `drizzle-kit push` and is NOT reflected in any migration file or the journal. A fresh clone + `drizzle-kit migrate` will not reproduce the current state. **Todo:** (1) snapshot the current schema into real migration files — either via `drizzle-kit introspect` (reads live DB → produces schema + migration) or by hand-rolling; update `drizzle/meta/_journal.json` + `*_snapshot.json` accordingly. (2) Fold `drizzle/0002_enable_pgvector.sql` in (note: `CREATE EXTENSION vector` requires superuser, separate from app role — either script it outside drizzle or document it). (3) Add a macOS setup note/README for pgvector on pg16: brew ships pg17/pg18 only, so either build from source (`git clone pgvector && make PG_CONFIG=/opt/homebrew/opt/postgresql@16/bin/pg_config && make install`) or switch to the `pgvector/pgvector:pg16` Docker image already referenced in `docker-compose.yml`. (4) Evaluate whether local dev should standardize on Docker Postgres to prevent this class of drift. (5) Tighten E2E so it catches schema drift — e.g. a test that uploads with a real/fake key stub and asserts `processingStatus === "ready"` and `COUNT(document_chunks) > 0` for the doc, rather than accepting `failed` as a valid outcome. |
-| **Tech debt — PDF text selection** | KNOWN | pdfjs renders every word as a separate `position: absolute` span. This makes browser `::selection` produce per-word highlight rectangles (overlapping bars on titles), breaks triple-click line select, and causes full-page selection snap via `.endOfContent`. Root cause is architectural — no CSS fix exists. Attempted: (1) custom CSS overrides on `.endOfContent`/`::selection`, (2) removing overrides to restore defaults, (3) custom inline text layer with `usePageContext()` — alignment was too poor (browser font ≠ PDF font). **Future options:** (a) proper inline text layer with per-line `scaleX` correction matching PDF glyph widths, (b) alternative library (e.g. `@react-pdf-viewer/core`), (c) accept limitation. |
-| 2.0–2.3 | Pending | — |
-| 3.0–3.3 | Pending | — |
-| 4.0–4.4 | Pending | — |
+| **Migration rebaseline — drift debt** | DONE | `drizzle/` has only `0000_goofy_spencer_smythe.sql`, which predates chunking entirely. Every table since Phase 0.4+ (`document_chunks`, `document_sections`, `user_highlights`, `user_comments`, agent tables, pgvector extension) was created via ad-hoc `drizzle-kit push` and is NOT reflected in any migration file or the journal. A fresh clone + `drizzle-kit migrate` will not reproduce the current state. **Todo:** (1) snapshot the current schema into real migration files — either via `drizzle-kit introspect` (reads live DB → produces schema + migration) or by hand-rolling; update `drizzle/meta/_journal.json` + `*_snapshot.json` accordingly. (2) Fold `drizzle/0002_enable_pgvector.sql` in (note: `CREATE EXTENSION vector` requires superuser, separate from app role — either script it outside drizzle or document it). (3) Add a macOS setup note/README for pgvector on pg16: brew ships pg17/pg18 only, so either build from source (`git clone pgvector && make PG_CONFIG=/opt/homebrew/opt/postgresql@16/bin/pg_config && make install`) or switch to the `pgvector/pgvector:pg16` Docker image already referenced in `docker-compose.yml`. (4) Evaluate whether local dev should standardize on Docker Postgres to prevent this class of drift. (5) Tighten E2E so it catches schema drift — e.g. a test that uploads with a real/fake key stub and asserts `processingStatus === "ready"` and `COUNT(document_chunks) > 0` for the doc, rather than accepting `failed` as a valid outcome. |
+| **PDF text selection — multi-row + gaps + triple-click** | DONE | Ported `TextLayerBuilder.#enableGlobalSelectionListener` from `pdfjs-dist/web/pdf_viewer.mjs` into `src/hooks/use-pdf-text-selection.ts` (called once from `PdfViewer`). `react-pdf` only toggles `.selecting` on mousedown/mouseup; it was missing the `selectionchange` handler that dynamically moves `.endOfContent` into the DOM adjacent to the selection anchor and sets its width/height to cover the layer. Without that, Chrome's selection extension jumped to end-of-page when the pointer entered the gap between rows. Side effect: also fixed per-word highlight gaps (endOfContent now covers the layer area) and triple-click line select. Verified via DOM assertions (endOfContent repositioned, `.selecting` applied, selection height bounded to selected rows). |
+| **Tech debt — PDF text selection (remaining)** | KNOWN | Two remaining issues, both inherent to pdfjs's transparent-text-over-canvas architecture: (1) **double-click word overlay width slightly misaligned** — browser renders fallback font, pdfjs scales span via `shouldScaleText`, but glyph metrics don't perfectly match the canvas-rendered PDF text. (2) **multi-column layouts with a divider** — selection drags across columns pick up text in reading order (all of column 1 end → start of column 2) rather than staying within the intended column, making cross-column selection look buggy. **Future options:** (a) custom inline text layer with per-line `scaleX` correction matching PDF glyph widths (fixes #1), (b) column-aware selection handler that detects divider gaps and constrains selection (fixes #2), (c) switch to `@react-pdf-viewer/core`, (d) accept limitations. Chrome's built-in PDF viewer uses a native C++ renderer, so 1:1 parity via JS is fundamentally limited. |
+| **2.0 — Smart Citations** | DONE | Tasks 18–23 shipped on `feature/smart-citations`. `document_references` / `library_references` / `kept_citations` tables + migration `0001_aromatic_junta.sql` (includes partial unique index `library_references_user_doi_unique_idx` for race-free per-user DOI dedup). `/api/documents/[id]/citations/extract` parses `[n]` markers from text layer; `/citations/enrich` hits Semantic Scholar (DOI first, title fallback, 429 retry + 200ms pacing, parallel DB updates). `[refId]/keep` idempotent via `ON CONFLICT DO NOTHING`; `[refId]/save` upserts library_references on `(user_id, doi)` + kept_citations on `(user_id, doc_ref_id)` — race-free. Reader UI: `CitationCard` popover (`useCitationClick` with `caretRangeFromPoint` + Firefox `caretPositionFromPoint` fallback, Escape + outside-click dismiss, SSR-safe positioning), optimistic UI updates on Keep/Save, sonner toasts. `/library/references` page lists saved refs. 120 unit tests passing, tsc clean. **E2E verified (full loop):** uploaded arXiv "Attention Is All You Need" (doc 185) as numeric `[n]` fixture; `/citations/extract` inserted 40 refs; clicking `[13]` in reader opened `CitationCard` with "Long short-term memory — Hochreiter & Schmidhuber, 1997"; Save to Library fired "Saved to library" toast; `/library/references` renders the saved entry. **Bug fixed mid-E2E:** pdfjs renders `<section class="linkAnnotation"><a href="#" title="N">` over `[n]` markers — empty textContent + click interception broke both `caretRangeFromPoint` and the lone-`[n]` target fallback. Added `findCitationFromAnchor` helper (12 new tests, happy-dom) that walks up to nearest `<a>` and matches textContent-then-title, wired into `useCitationClick` as Fallback 2 with `preventDefault` to stop href="#" nav. Commit `ecffbca`. |
+| **2.0.1 — Smart Citations: annotation-based detection (superscripts)** | DONE | Annotation extraction via `page.getAnnotations()` in new `annotation-extractor.ts`; named-dest string parsing resolves references for Springer Nature InDesign PDFs; positioned-text fallback for anonymous XYZ dests. `document_reference_markers` schema + migration (row-per-occurrence). `HighlightLayer` now renders real CSS-pixel overlays from stored rects (PDF y-flip applied, height clamped to 55% of annotation rect for superscript fit). `useCitationClick` checks `data-marker-index` overlays first, falls back to caretRange + anchor detection. Citations sidebar with Extract Citations button + authors/year structured label. Fix: annotation fallback threshold ≥3 refs prevents spurious suppression of text-regex on bracket-style PDFs. E2E verified: Nature Physics (140 annotations, 97 refs, overlays render + click); attention (40 refs via text-regex regression); empty state + extract button; all requests 200, no console errors. |
+| **2.0.2 — UX polish & bugfixes (NEXT)** | NEXT | Render user highlights on PDF (a); outline → Pages+Contents tabs (b); Ctrl+F keyword search (e); highlight-panel comment + Ask-AI, kill old comment bar + Explain tab (f, f1); trackpad pinch zoom (g); chat-history UI on chat sidebar (h); dockable/resizable right sidebars + collapsible top toolbar. See spec §1. |
+| 2.0.3 — LangChain / LangGraph migration | Pending | Port chat/explain/outline routes off `@openrouter/sdk` to LangChain JS + LangGraph. Invoke `langchain-skills:framework-selection` at kickoff. Non-negotiable: all Phase 1 e2e tests pass unchanged. See spec §2. |
+| 2.1 — AI Auto-Highlight (REWRITTEN) | Pending | Natural-language / slash-command `/highlight` tool-loop writes `source='ai-auto'` highlights with `layer_id` grouping. Highlights sidebar Runs filter. Replaces old 2.1 classification taxonomy. See spec §3. |
+| 2.2 — Enriched Smart Citations (REWRITTEN) | Pending | `CitationCard` shows S2 title/author hyperlinks, venue/year/citation-count, Save-to-References. Rendered in inline popover AND Citations tab list. See spec §4. |
+| 2.3 — Library Management (lite) | Pending | Rename/delete/sort/search on `/library`; `/library/references` page. Collections/tags deferred. See spec §5. |
+| 3.0a — Smart Explanation detection + icons (NEW) | Pending | Chandra two-tier pipeline populates `document_segments`; `ExplainMarkerLayer` renders icons on chapters/figures/formulas; click opens chat with seed message. Invoke `chandra-ocr` skill at kickoff. See spec §6. |
+| 3.0b — Smart Explanation agent + history (NEW) | Pending | LangGraph agent with page-context + paper RAG tools; KaTeX formula rendering; chat-history kind filter. See spec §7. |
+| 3.1 — External Links & Deep References | Pending | Unchanged from prior plan. See spec §8. |
+| 3.2 — Voice Mode (push-to-talk) | Pending | WebSocket PTT; invoke ElevenLabs `agents`, `speech-to-text`, `text-to-speech` skills at kickoff. See spec §9. |
+| 3.3 — BibTeX Export | Pending | Bulk library export; per-ref BibTeX already in `CitationCard` from 2.2. See spec §10. |
+| 4.0 — AI outline fallback + TTS + LaTeX copy (NEW) | Pending | LLM-generated outline when native outline missing; TTS speaker icon per chat message; Copy-LaTeX on formula icons. See spec §11. |
+| 4.1 — Zotero Import (NEW) | Pending | Settings-stored Zotero API key + userID; import flow feeds existing upload pipeline. See spec §12. |
+| 4.2 — Image-PDF OCR "AI Scan" (NEW) | Pending | Two tools: Chandra extracts text + segments; OCRmyPDF (sidecar/subprocess — mechanism TBD at kickoff) embeds text layer into a new selectable PDF. See spec §13. |
+| 5.0–5.4 — Polish & scale (MOVED from old Phase 4) | Pending | Dark mode, FTS, split view + reading memory, OAuth + cloud key sync, perf/S3/CDN/rate limits/Sentry/virtual rendering. See spec §14. |
 
 ---
 
@@ -48,14 +62,16 @@
 | Auth | Better Auth (self-hosted TS lib) | Email+password built-in, OAuth plugin later, stores in your Postgres, no vendor lock-in |
 | ORM | Drizzle ORM | Lightweight, SQL-like, excellent TS inference, schema-as-code |
 | Streaming | SSE for text agent + all AI features; WebSocket only for voice | SSE simpler, works through Vercel/Cloudflare, auto-reconnects |
-| PDF rendering | react-pdf v9 (wraps PDF.js), loaded via `next/dynamic` to bypass SSR | React 19 support, canvas + text layer |
+| PDF rendering | react-pdf v10 (wraps PDF.js), loaded via `next/dynamic` to bypass SSR | React 19 support, canvas + text layer |
 | Reader state | Zustand | Minimal boilerplate for page/zoom/scroll state |
 | Vector DB | pgvector (Postgres extension) | No separate service, lives in existing Postgres |
 | Background work | Inline in upload route handler (v0); revisit if jobs >5s become common | Avoid Celery/Redis/queue complexity until measured demand exists |
-| LLM | OpenRouter via `@openrouter/sdk` (BYOK) | User provides key, multi-model access, native TS, `callModel` + tools + streaming |
-| Embeddings | OpenRouter OpenAI-compatible REST endpoint via `fetch` | SDK does not currently expose embeddings; use `POST https://openrouter.ai/api/v1/embeddings` with `openai/text-embedding-3-small` |
-| Agent framework | None (raw `callModel` + `tool()`) | LangChain TS not justified for v0; revisit if multi-agent or HITL is needed |
-| OCR | Mistral OCR API (BYOK), called via `fetch` from Next.js route | Best-in-class for scientific PDFs |
+| LLM | OpenRouter endpoint reached via LangChain JS (`@langchain/openai` OpenAI-compatible) from Phase 2.0.3 onwards. BYOK user key preserved. | Multi-model access + LangChain primitives (tools, RAG, persistence) for later agentic features (2.1, 3.0b). Primitive per route deferred to `langchain-skills:framework-selection` at Phase 2.0.3 kickoff. |
+| Embeddings | OpenRouter OpenAI-compatible REST endpoint via `fetch` | SDK does not currently expose embeddings; use `POST https://openrouter.ai/api/v1/embeddings` with `openai/text-embedding-3-small`. Unchanged by LangChain migration. |
+| Agent framework | LangChain JS + LangGraph (from Phase 2.0.3 onwards) | Auto-highlight tool-loop (2.1) and smart-explanation agent (3.0b) need tool routing, streaming, and conversation persistence. Raw `callModel` was fine for simple v0 chat; these features justify the upgrade. |
+| Structured extraction | Chandra OCR (Datalab API, BYOK) — invoked per `chandra-ocr` skill at Phase 3.0a kickoff | Two-tier pipeline: `unpdf` still produces text for chunking/embeddings; Chandra additionally produces `document_segments` (section/figure/formula/table bboxes + payloads) that power Smart Explanations, AI outline fallback, and image-PDF OCR. |
+| Image-PDF text layer | OCRmyPDF (Python) — deployment mechanism (sidecar / subprocess / JS alt) deferred to Phase 4.2 kickoff | Chandra alone cannot emit a PDF with an embedded selectable text layer; we need a classical OCR-PDF transformer so native selection/highlighting/find all work on scanned papers without custom overlays. |
+| Sidebar shell | `react-resizable-panels` + `DockableSidebar` wrapper from Phase 2.0.2 | Width-resize + dock-position (right/bottom/left) per sidebar, persisted to localStorage. Avoids bespoke drag/resize logic. |
 | Citations | Semantic Scholar API (free) | Comprehensive, good rate limits |
 | Encryption | Node.js crypto AES-256-GCM | Built-in, zero dependencies |
 | Repo structure | Single Next.js project under `src/` | No separate services directory |
@@ -65,23 +81,39 @@
 ## Dependency Graph
 
 ```
-0.0 (Infra) ✅ → 0.1 (Auth) ✅ → 0.2 (Upload) ✅ → 0.3 (Reader) ✅ → 0.4 (Highlights) ✅ → 0.5 (Comments/BYOK) ✅
-                                                                                                  |
-                                                                                                  v
-                                                                                          1.0 (BYOK OpenRouter)
-                                                                                                  |
-                                                                                                  v
-                                                                                          1.1 (Chunking + pgvector)
-                                                                                                  |
-                                                                                          ┌───────┴───────┐
-                                                                                          v               v
-                                                                                  1.2 (AI Outline)   1.3 (RAG Chat)
-                                                                                                  |
-                                                                                  2.0–2.3 (independent of each other)
-                                                                                                  |
-                                                                                  3.0–3.3 (independent of each other)
-                                                                                                  |
-                                                                                  4.0–4.4 (can interleave after Phase 1)
+0.x ✅ → 1.x ✅ → 2.0 (Smart Citations) ✅ → 2.0.1 (annotation-based) ✅
+                                                                 |
+                                                                 v
+                                                          2.0.2 (UX polish + sidebars + unified highlights)  ← NEXT
+                                                                 |
+                                                                 v
+                                                          2.0.3 (LangChain / LangGraph migration)
+                                                                 |
+                                                   ┌─────────────┼─────────────┐
+                                                   v             v             v
+                                          2.1 (Auto-Highlight) 2.2 (Enriched 2.3 (Library
+                                                                 Citations)    Lite)
+                                                   |             |             |
+                                                   └─────────────┴─────────────┘
+                                                                 |
+                                                                 v
+                                                          3.0a (Smart Explanation detection + icons)
+                                                                 |    [requires Chandra two-tier]
+                                                                 v
+                                                          3.0b (Smart Explanation agent + history)
+                                                                 |    [requires 2.0.3 RAG tool]
+                                                                 v
+                                                   ┌─────────────┼─────────────┐
+                                                   v             v             v
+                                                  3.1           3.2           3.3
+                                                                 |
+                                                                 v
+                                                   ┌─────────────┼─────────────┐
+                                                   v             v             v
+                                                  4.0           4.1           4.2
+                                                                 |
+                                                                 v
+                                                          5.0–5.4 (any order)
 ```
 
 ---
@@ -1030,7 +1062,7 @@ git commit -m "feat(library): add document library page with upload and grid"
 npm install react-pdf zustand
 ```
 
-**Docs to check:** react-pdf v9 docs — https://github.com/wojtekmaj/react-pdf — check React 19 compatibility and worker setup for Next.js.
+**Docs to check:** react-pdf v10 docs — https://github.com/wojtekmaj/react-pdf — check React 19 compatibility and worker setup for Next.js.
 
 - [ ] **Step 1: Configure Next.js for PDF.js worker**
 
@@ -1038,7 +1070,7 @@ Modify `next.config.ts` to copy the PDF.js worker file. Check react-pdf docs for
 
 ```typescript
 // next.config.ts — add webpack config for pdf.js worker
-// The exact config depends on react-pdf v9 docs
+// The exact config depends on react-pdf v10 docs
 ```
 
 - [ ] **Step 2: Create Zustand reader state store**
@@ -1081,7 +1113,7 @@ export const useReaderState = create<ReaderState>((set) => ({
 import { useState, useEffect } from "react";
 import { pdfjs } from "react-pdf";
 
-// Set worker — check react-pdf v9 docs for correct path
+// Set worker — check react-pdf v10 docs for correct path
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
@@ -2226,7 +2258,7 @@ interface StoredKey {
 const PROVIDERS = [
   { type: "llm", name: "openrouter", label: "LLM (OpenRouter)", placeholder: "sk-or-..." },
   { type: "voice", name: "elevenlabs", label: "Voice (ElevenLabs)", placeholder: "sk_..." },
-  { type: "ocr", name: "mistral", label: "OCR (Mistral)", placeholder: "..." },
+  { type: "ocr", name: "datalab", label: "OCR (Chandra / Datalab)", placeholder: "dl_..." },
 ] as const;
 
 export default function ApiKeysPage() {
@@ -3082,117 +3114,1511 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 
 ---
 
-# Phase 2: Smart Reading (Task Outlines)
+# Phase 2: Smart Reading
 
-> Phases 2-4 are outlined at task level. Detailed code will be planned when Phase 1 is complete. Each can be planned as a separate detailed plan.
+> **How this plan relates to the spec.** Every phase from 2.0.2 onwards is governed by the design spec at `docs/superpowers/specs/2026-04-13-inhale-phases-2-to-5-design.md`. The spec is the source of truth for scope, architecture, and acceptance criteria. This plan is the executable layer: Phase 2.0.2 (the immediate next work) ships with full TDD-granular tasks; later phases ship as task outlines here and get expanded into full TDD tasks just-in-time at their kickoff (each outline names which skills to invoke at kickoff — `langchain-skills:framework-selection`, `chandra-ocr`, ElevenLabs `agents`/`speech-to-text`/`text-to-speech`, etc.). If this plan drifts from the spec, fix the plan — the spec governs. If the spec itself is wrong, amend the spec first, then re-reconcile the plan.
+
+---
+
+## E2E Testing Strategy (Chrome DevTools MCP)
+
+Every implementation phase includes a mandatory **E2E verification gate** that uses Chrome DevTools MCP tools to test the feature in a real browser before marking the phase complete. This replaces "manual test in browser" with automated, reproducible verification.
+
+### Approach
+
+1. **TDD for unit/integration logic** — Write failing tests first for route handlers, services, and utilities (see TDD skill). Use the project's existing Playwright test suite for API-level contracts.
+2. **Chrome DevTools E2E for UI features** — After implementation, use Chrome DevTools MCP to:
+   - `navigate_page` to the relevant page
+   - `wait_for` key elements to load
+   - `take_snapshot` to verify page structure and `data-testid` attributes
+   - `click`, `fill`, `type_text` to simulate user interactions
+   - `take_screenshot` for visual verification
+   - `evaluate_script` for assertions on DOM state, network responses, or console errors
+   - `list_console_messages` to catch runtime errors
+   - `list_network_requests` to verify API calls succeed (no 4xx/5xx)
+3. **Golden path + edge cases** — Each gate specifies the exact flows to verify.
+4. **No phase is DONE until its E2E gate passes.**
+
+### Prerequisites for E2E gates
+
+- Dev server running (`npm run dev`)
+- Docker Postgres up (`docker compose up -d`)
+- A test user account exists (created in Phase 0.1 E2E setup or via seed)
+- Chrome browser accessible to `chrome-devtools-mcp`
+
+---
 
 ## Phase 2.0 — Smart Citations
 
 **DB:** `document_references`, `library_references`, `kept_citations` tables
 
 **Tasks:**
-- [ ] Task 18: Create Drizzle schemas for references, library refs, kept citations
-- [ ] Task 19: Citation extraction task (parse `[n]` markers from text layer, create DocumentReference rows)
-- [ ] Task 20: Semantic Scholar API integration service (fetch metadata by title/DOI)
-- [ ] Task 21: Citation card UI component (click [n] → popover with title, authors, abstract, actions)
-- [ ] Task 22: "Keep It" and "Save to Library" API routes + UI
-- [ ] Task 23: Library references page at `/library/references`
+- [x] Task 18: Create Drizzle schemas for references, library refs, kept citations
+- [x] Task 19: Citation extraction task (parse `[n]` markers from text layer, create DocumentReference rows)
+- [x] Task 20: Semantic Scholar API integration service (fetch metadata by title/DOI)
+- [x] Task 21: Citation card UI component (click [n] → popover with title, authors, abstract, actions)
+- [x] Task 22: "Keep It" and "Save to Library" API routes + UI
+- [x] Task 23: Library references page at `/library/references`
 
-## Phase 2.1 — Auto-Highlight
+### E2E Gate — Phase 2.0
 
-**DB:** `document_highlights` table (auto-generated, distinct from user_highlights)
+Using Chrome DevTools MCP after all tasks above pass:
+
+- [ ] **Navigate** to reader page with a processed document (`navigate_page`)
+- [ ] **Snapshot** the text layer and verify `[n]` citation markers are present (`take_snapshot`)
+- [ ] **Click** a citation marker → verify citation card popover appears with title, authors, abstract
+- [ ] **Click** "Keep It" button → verify success feedback, no console errors (`list_console_messages`)
+- [ ] **Click** "Save to Library" → verify success
+- [ ] **Navigate** to `/library/references` → verify saved references appear in the list
+- [ ] **Verify** no 4xx/5xx network errors during the entire flow (`list_network_requests`)
+- [ ] **Screenshot** citation card and references page for visual review (`take_screenshot`)
+
+## Phase 2.0.1 — Smart Citations: annotation-based detection (superscripts)
+
+**Problem:** Phase 2.0's parser (`src/lib/citations/parser.ts:33`) matches only `[n]` bracket markers. This silently fails on most biomedical/life-science journals (Nature, Science, Cell, NEJM, PNAS, JAMA, Lancet, …) which use superscript citations rendered as internal PDF link annotations over tiny superscript glyphs — not `[n]` text.
+
+Verified on `e2e/fixtures/test_real_paper.pdf` (Nature Physics, 26 pages): **0** `[n]` markers in the text, **99** internal `/Link` annotations across pages 1–4. `extractMarkers()` returns `[]`, zero `documentReferences` rows are written, and the reader's click handler has nothing to match against.
+
+Secondary issue: `HighlightLayer` (`src/components/reader/highlight-layer.tsx:14`) still returns `null`. The visible "colored boxes" on `[n]`-style PDFs come from pdf.js's built-in annotation-layer CSS (via `renderAnnotationLayer={true}` at `pdf-page.tsx:23`), not our code — so behavior is inconsistent across PDFs and we have no styling control.
+
+**Strategy:** promote pdf.js `getAnnotations()` to the primary extraction path (covers both `[n]`-with-annotations and superscript-with-annotations uniformly, and gives bounding boxes for free). Keep text-regex as a fallback for older PDFs without proper link annotations.
 
 **Tasks:**
-- [ ] Task 24: Auto-highlight Drizzle schema
-- [ ] Task 25: Classification job (Next.js route handler — sentences → LLM → classify as novelty/method/result/background/limitation)
-- [ ] Task 26: Auto-highlight overlay component (color-coded by classification, toggleable)
+- [x] Task 23a: Extend `src/app/api/documents/[id]/citations/extract/route.ts` to load the PDF via pdf.js, call `page.getAnnotations()` per page, filter internal-link annots (`subtype === 'Link'` with `dest`, not `url`), and emit a marker record per annotation with `{pageNumber, rect, destPage, destY}`.
+- [x] Task 23b: Destination → reference entry resolution. For each annotation's `Dest`, resolve to `(destPage, destY)` in PDF user-space. On the bibliography page, find the reference entry whose top-Y is closest at-or-below `destY`. Parse that entry with the extended bibliography regex (Task 23d).
+- [x] Task 23c: Schema: `document_reference_markers (refId, pageNumber, x0, y0, x1, y1)` row-per-occurrence. Migration at `drizzle/0002_spicy_tattoo.sql`.
+- [x] Task 23d: Extended `REF_ENTRY_START_RE` to accept `/^(\d{1,3})\.\s+/` (Vancouver/AMA/Nature style). 35/35 parser tests pass.
+- [x] Task 23e: Implemented `HighlightLayer` — absolutely-positioned overlays from PDF-user-space rects, y-flipped via `(naturalHeight - y1) * scale`. `pointer-events: none` container, `pointer-events: auto` per marker. 142/142 tests pass.
+- [x] Task 23f: Updated `useCitationClick` — `data-marker-index` overlay check is primary; caretRange + `findCitationFromAnchor` remain as fallback.
+- [x] Task 23g: `CitationsSidebar` added with "No citations detected" empty state and format note.
 
-## Phase 2.2 — Enhanced AI Agent + TTS
+### E2E Gate — Phase 2.0.1
 
-**Tasks:**
-- [ ] Task 27: Agent tool-use system (search doc, lookup citation, explain formula tools)
-- [ ] Task 28: SSE streaming for enhanced agent responses with inline citations
-- [ ] Task 29: TTS toggle on agent responses (ElevenLabs BYOK, speaker icon per message)
+- [x] **Nature-style PDF:** `s41567-025-03158-3` (Nature Physics, doc 1) — 140 annotations extracted, 97 refs inserted, 18 marker overlays on page 1, click on marker 1 → citation card "Shin, Y. & Brangwynne, C. P. … Science 357, eaaf4382 (2017)".
+- [x] **Bracket-style PDF:** `attention-is-all-you-need` (doc 185) — 40 refs via text-regex fallback (≥3 threshold prevents 1 spurious annotation from blocking fallback), anchor fallback click on `[34]` → "End-to-end memory networks".
+- [x] **Empty case:** `nash51` (doc 159, 0 citations) — citations sidebar opens, shows "No citations detected / This document may use a citation format not yet supported.", no console errors.
+- [x] **Network:** all requests 200 for docs 1, 185, 159. No 4xx/5xx.
+- [x] **Screenshots** saved: `e2e/phase201-nature-markers.png`, `e2e/phase201-nature-citation-card.png`, `e2e/phase201-bracket-citation-card.png`, `e2e/phase201-empty-state.png`.
 
-## Phase 2.3 — Library Management
+## Phase 2.0.2 — UX polish & bugfixes [FULL TDD DETAIL]
 
-**Tasks:**
-- [ ] Task 30: Collections/folders schema and CRUD
-- [ ] Task 31: Tags, search, sort, bulk operations on library page
-- [ ] Task 32: Library UI redesign with filters and grid/list toggle
+**Spec:** `docs/superpowers/specs/2026-04-13-inhale-phases-2-to-5-design.md` §1.
+
+**Goal:** ship all the non-AI reader improvements the spec lists in §1.1 — user-highlight rendering (a), outline replacement (b), keyword search (e), highlight-panel comments + Ask-AI with legacy Explain/Comments UI removed (f, f1), trackpad pinch zoom (g), chat history drawer (h), plus the new `DockableSidebar` shell and collapsible top toolbar.
+
+**Prereqs:** `docker compose up -d` (Postgres 16 + pgvector). Phase 2.0.1 code untouched.
+
+### Task 24: Schema migration — extend `user_highlights` with `source`, `layer_id`, `comment`, `rects`
+
+**Files:**
+- Modify: `src/db/schema/user-highlights.ts`
+- Generate: `drizzle/0003_unified_highlights.sql`
+- Test: `tests/db/user-highlights.migration.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// tests/db/user-highlights.migration.test.ts
+import { describe, it, expect } from "vitest";
+import { db } from "@/db";
+import { sql } from "drizzle-orm";
+
+describe("user_highlights schema extensions", () => {
+  it("has source, layer_id, comment, rects columns with expected defaults", async () => {
+    const { rows } = await db.execute(sql`
+      SELECT column_name, data_type, column_default, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'user_highlights'
+    `);
+    const cols = Object.fromEntries(rows.map((r: any) => [r.column_name, r]));
+    expect(cols.source).toMatchObject({ is_nullable: "NO" });
+    expect(String(cols.source.column_default ?? "")).toContain("'user'");
+    expect(cols.layer_id).toMatchObject({ data_type: "uuid", is_nullable: "YES" });
+    expect(cols.comment).toMatchObject({ data_type: "text", is_nullable: "YES" });
+    expect(cols.rects).toMatchObject({ data_type: "jsonb", is_nullable: "YES" });
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run tests/db/user-highlights.migration.test.ts`
+Expected: FAIL (columns don't exist yet).
+
+- [ ] **Step 3: Extend the drizzle schema**
+
+```ts
+// src/db/schema/user-highlights.ts
+import { pgTable, text, timestamp, serial, integer, pgEnum, index, uuid, jsonb } from "drizzle-orm/pg-core";
+import { user } from "./auth";
+import { documents } from "./documents";
+
+export const highlightColorEnum = pgEnum("highlight_color", [
+  "yellow", "green", "blue", "pink", "orange", "amber",
+]);
+export const highlightSourceEnum = pgEnum("highlight_source", ["user", "ai-auto"]);
+
+export const userHighlights = pgTable("user_highlights", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  documentId: integer("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+  pageNumber: integer("page_number").notNull(),
+  textContent: text("text_content").notNull(),
+  startOffset: integer("start_offset").notNull(),
+  endOffset: integer("end_offset").notNull(),
+  color: highlightColorEnum("color").notNull().default("yellow"),
+  note: text("note"),
+  source: highlightSourceEnum("source").notNull().default("user"),
+  layerId: uuid("layer_id"),
+  comment: text("comment"),
+  rects: jsonb("rects"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+}, (table) => [
+  index("user_highlights_user_document_idx").on(table.userId, table.documentId),
+  index("user_highlights_layer_idx").on(table.layerId),
+]);
+```
+
+- [ ] **Step 4: Generate + apply migration**
+
+Run: `npx drizzle-kit generate`
+Inspect: `drizzle/0003_*.sql` contains `ALTER TABLE … ADD COLUMN source`, `layer_id`, `comment`, `rects` + new `highlight_source` enum + new `amber` color value.
+Run: `npx drizzle-kit migrate`
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `npx vitest run tests/db/user-highlights.migration.test.ts`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/db/schema/user-highlights.ts drizzle/0003_*.sql drizzle/meta/ tests/db/user-highlights.migration.test.ts
+git commit -m "feat(db): extend user_highlights with source, layer_id, comment, rects"
+```
+
+### Task 25: `UserHighlightLayer` component — render stored highlights on PDF (feature a)
+
+**Files:**
+- Create: `src/components/reader/user-highlight-layer.tsx`
+- Create: `src/components/reader/user-highlight-layer.test.tsx`
+- Modify: `src/components/reader/pdf-page.tsx`
+- Modify: `src/components/reader/pdf-viewer.tsx`
+
+> The existing `highlight-layer.tsx` renders citation markers (Phase 2.0.1) and stays. This task adds a parallel component for user highlights so concerns stay separated.
+
+- [ ] **Step 1: Write the failing test**
+
+```tsx
+// src/components/reader/user-highlight-layer.test.tsx
+import { describe, it, expect } from "vitest";
+import { render } from "@testing-library/react";
+import { UserHighlightLayer, type UserHighlight } from "./user-highlight-layer";
+
+describe("UserHighlightLayer", () => {
+  it("renders one overlay per rect on matching page with correct CSS position", () => {
+    const h: UserHighlight = {
+      id: 1, color: "yellow", source: "user", layerId: null,
+      rects: [{ page: 1, x0: 10, y0: 100, x1: 50, y1: 110 }],
+    };
+    const { container } = render(
+      <UserHighlightLayer highlights={[h]} pageNumber={1} naturalWidth={612} naturalHeight={792} displayWidth={612} />
+    );
+    const overlays = container.querySelectorAll("[data-highlight-id]");
+    expect(overlays).toHaveLength(1);
+    const style = (overlays[0] as HTMLElement).style;
+    expect(style.top).toBe("682px");   // (792 - 110) * 1
+    expect(style.left).toBe("10px");
+    expect(style.width).toBe("40px");
+    expect(style.height).toBe("10px");
+  });
+
+  it("filters out rects from other pages", () => {
+    const h: UserHighlight = {
+      id: 2, color: "blue", source: "user", layerId: null,
+      rects: [{ page: 2, x0: 0, y0: 0, x1: 10, y1: 10 }],
+    };
+    const { container } = render(
+      <UserHighlightLayer highlights={[h]} pageNumber={1} naturalWidth={612} naturalHeight={792} displayWidth={612} />
+    );
+    expect(container.querySelectorAll("[data-highlight-id]")).toHaveLength(0);
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run src/components/reader/user-highlight-layer.test.tsx`
+Expected: FAIL (module missing).
+
+- [ ] **Step 3: Implement the component**
+
+```tsx
+// src/components/reader/user-highlight-layer.tsx
+"use client";
+
+export interface UserHighlight {
+  id: number;
+  color: "yellow" | "green" | "blue" | "pink" | "orange" | "amber";
+  source: "user" | "ai-auto";
+  layerId: string | null;
+  rects: { page: number; x0: number; y0: number; x1: number; y1: number }[] | null;
+}
+
+const COLOR_BG: Record<UserHighlight["color"], string> = {
+  yellow: "rgba(250,204,21,0.30)",
+  green:  "rgba(74,222,128,0.30)",
+  blue:   "rgba(96,165,250,0.30)",
+  pink:   "rgba(244,114,182,0.30)",
+  orange: "rgba(251,146,60,0.30)",
+  amber:  "rgba(245,158,11,0.35)",
+};
+
+interface Props {
+  highlights: UserHighlight[];
+  pageNumber: number;
+  naturalWidth: number;
+  naturalHeight: number;
+  displayWidth: number;
+}
+
+export function UserHighlightLayer({ highlights, pageNumber, naturalWidth, naturalHeight, displayWidth }: Props) {
+  const scale = displayWidth / naturalWidth;
+  return (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }} aria-hidden="true">
+      {highlights.flatMap((h) =>
+        (h.rects ?? [])
+          .filter((r) => r.page === pageNumber)
+          .map((r, idx) => (
+            <div
+              key={`${h.id}-${idx}`}
+              data-highlight-id={h.id}
+              className="absolute rounded-sm transition-shadow hover:ring-2 hover:ring-primary/50"
+              style={{
+                top:    (naturalHeight - r.y1) * scale,
+                left:   r.x0 * scale,
+                width:  (r.x1 - r.x0) * scale,
+                height: (r.y1 - r.y0) * scale,
+                background: COLOR_BG[h.color],
+                pointerEvents: "auto",
+              }}
+            />
+          ))
+      )}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run src/components/reader/user-highlight-layer.test.tsx`
+Expected: PASS.
+
+- [ ] **Step 5: Wire into `pdf-page.tsx`**
+
+```tsx
+// src/components/reader/pdf-page.tsx — add alongside the existing citation HighlightLayer
+import { UserHighlightLayer, type UserHighlight } from "./user-highlight-layer";
+
+interface PdfPageProps {
+  pageNumber: number;
+  width: number;
+  zoom: number;
+  markers?: MarkerRect[];
+  userHighlights?: UserHighlight[];
+}
+
+// inside render, after the existing citation <HighlightLayer /> block:
+{naturalSize && (userHighlights?.length ?? 0) > 0 && (
+  <UserHighlightLayer
+    highlights={userHighlights!}
+    pageNumber={pageNumber}
+    naturalWidth={naturalSize.width}
+    naturalHeight={naturalSize.height}
+    displayWidth={displayWidth}
+  />
+)}
+```
+
+Add `userHighlights?: UserHighlight[]` prop to `PdfViewerProps` and pass per-page in the `.map()`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/components/reader/user-highlight-layer.tsx src/components/reader/user-highlight-layer.test.tsx src/components/reader/pdf-page.tsx src/components/reader/pdf-viewer.tsx
+git commit -m "feat(reader): render user highlights on PDF via UserHighlightLayer"
+```
+
+### Task 26: Highlight write path computes and persists `rects`
+
+**Files:**
+- Modify: `src/hooks/use-pdf-text-selection.ts` (selection→rects derivation)
+- Modify: `src/app/api/documents/[id]/highlights/route.ts` (accept + persist rects)
+- Modify: `e2e/highlights.spec.ts` (extend fixture)
+
+- [ ] **Step 1: Write the failing test**
+
+Extend `e2e/highlights.spec.ts`:
+
+```ts
+test("POST creates highlight with rects, GET returns them", async ({ request }) => {
+  const res = await request.post(`/api/documents/${DOC_ID}/highlights`, {
+    data: {
+      pageNumber: 1, textContent: "hello",
+      startOffset: 0, endOffset: 5, color: "yellow",
+      rects: [{ page: 1, x0: 10, y0: 100, x1: 50, y1: 110 }],
+    },
+  });
+  expect(res.ok()).toBeTruthy();
+  const list = await (await request.get(`/api/documents/${DOC_ID}/highlights`)).json();
+  const latest = list.highlights.find((h: any) => h.textContent === "hello");
+  expect(latest.rects).toEqual([{ page: 1, x0: 10, y0: 100, x1: 50, y1: 110 }]);
+});
+```
+
+- [ ] **Step 2: Run — confirm fail.**
+
+Run: `npx playwright test e2e/highlights.spec.ts`
+
+- [ ] **Step 3: Extend selection → rects conversion**
+
+In `use-pdf-text-selection.ts` (or the component that calls POST /highlights after a color click in the selection toolbar), derive per-line rects:
+
+```ts
+function domRectsToPdfRects(range: Range, pageEl: HTMLElement, pageNumber: number, naturalWidth: number, naturalHeight: number) {
+  const pageBox = pageEl.getBoundingClientRect();
+  const scale = pageBox.width / naturalWidth;
+  return Array.from(range.getClientRects()).map((r) => ({
+    page: pageNumber,
+    x0: (r.left   - pageBox.left) / scale,
+    x1: (r.right  - pageBox.left) / scale,
+    y0: naturalHeight - (r.bottom - pageBox.top) / scale,
+    y1: naturalHeight - (r.top    - pageBox.top) / scale,
+  }));
+}
+```
+
+Include `rects` in the POST body.
+
+- [ ] **Step 4: Extend the POST route**
+
+```ts
+// src/app/api/documents/[id]/highlights/route.ts — POST
+const body = await req.json() as {
+  pageNumber: number; textContent: string;
+  startOffset: number; endOffset: number; color: string;
+  rects?: { page: number; x0: number; y0: number; x1: number; y1: number }[];
+};
+await db.insert(userHighlights).values({
+  userId, documentId, pageNumber: body.pageNumber,
+  textContent: body.textContent, startOffset: body.startOffset,
+  endOffset: body.endOffset, color: body.color as any,
+  rects: body.rects ?? null,
+});
+```
+
+Extend GET to return the `rects` column (likely already returns `*`; verify).
+
+- [ ] **Step 5: Run — confirm pass.**
+
+Run: `npx playwright test e2e/highlights.spec.ts`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git commit -am "feat(highlights): derive and persist selection rects"
+```
+
+### Task 27: Install `react-resizable-panels` + build `DockableSidebar` wrapper
+
+**Files:**
+- Modify: `package.json`
+- Create: `src/components/reader/dockable-sidebar.tsx`
+- Create: `src/components/reader/dockable-sidebar.test.tsx`
+
+- [ ] **Step 1: Install the dependency**
+
+Run: `npm install react-resizable-panels`
+
+- [ ] **Step 2: Write the failing test**
+
+```tsx
+// src/components/reader/dockable-sidebar.test.tsx
+import { describe, it, expect } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { DockableSidebar } from "./dockable-sidebar";
+
+describe("DockableSidebar", () => {
+  it("renders children and persists dock change to localStorage", () => {
+    render(<DockableSidebar id="test-sb" defaultDock="right"><div>content</div></DockableSidebar>);
+    expect(screen.getByText("content")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /dock/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /bottom/i }));
+    expect(localStorage.getItem("dockable-sidebar:test-sb:dock")).toBe("bottom");
+  });
+});
+```
+
+- [ ] **Step 3: Run — confirm fail.**
+
+- [ ] **Step 4: Implement `DockableSidebar`**
+
+```tsx
+// src/components/reader/dockable-sidebar.tsx
+"use client";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+
+export type Dock = "right" | "bottom" | "left";
+
+interface Props {
+  id: string;
+  defaultDock?: Dock;
+  children: React.ReactNode;
+}
+
+export function DockableSidebar({ id, defaultDock = "right", children }: Props) {
+  const storageKey = `dockable-sidebar:${id}`;
+  const [dock, setDock] = useState<Dock>(defaultDock);
+  const [size, setSize] = useState<number>(320);
+
+  useEffect(() => {
+    const d = localStorage.getItem(`${storageKey}:dock`) as Dock | null;
+    const s = Number(localStorage.getItem(`${storageKey}:size`) ?? 320);
+    if (d === "right" || d === "left" || d === "bottom") setDock(d);
+    if (Number.isFinite(s) && s > 0) setSize(s);
+  }, [storageKey]);
+
+  const persistDock = (d: Dock) => {
+    setDock(d);
+    localStorage.setItem(`${storageKey}:dock`, d);
+  };
+  const persistSize = (s: number) => {
+    setSize(s);
+    localStorage.setItem(`${storageKey}:size`, String(s));
+  };
+
+  const horizontal = dock === "bottom";
+  const rootStyle: React.CSSProperties = horizontal ? { height: size, width: "100%" } : { width: size, height: "100%" };
+  const borderCls = dock === "right" ? "border-l" : dock === "left" ? "border-r" : "border-t";
+  const handleCls = horizontal ? "absolute top-0 h-1 w-full cursor-row-resize" : "absolute top-0 w-1 h-full cursor-col-resize";
+
+  return (
+    <div className={`relative flex bg-background ${borderCls}`} style={rootStyle}>
+      <div
+        role="separator"
+        aria-orientation={horizontal ? "horizontal" : "vertical"}
+        className={handleCls}
+        onMouseDown={(e) => {
+          const start = horizontal ? e.clientY : e.clientX;
+          const startSize = size;
+          const onMove = (ev: MouseEvent) => {
+            const cur = horizontal ? ev.clientY : ev.clientX;
+            const delta = start - cur;
+            const next = dock === "left" ? startSize - delta : startSize + delta;
+            persistSize(Math.max(200, Math.min(900, next)));
+          };
+          const onUp = () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+          };
+          window.addEventListener("mousemove", onMove);
+          window.addEventListener("mouseup", onUp);
+        }}
+      />
+      <div className="flex-1 overflow-auto">{children}</div>
+      <div className="absolute right-1 top-1">
+        <details>
+          <summary className="list-none">
+            <Button size="sm" variant="ghost" aria-label="Dock">⋮</Button>
+          </summary>
+          <div role="menu" className="absolute right-0 mt-1 w-28 rounded-md border bg-popover p-1 shadow">
+            {(["right", "bottom", "left"] as Dock[]).map((d) => (
+              <button key={d} role="menuitem"
+                className={`w-full px-2 py-1 text-left text-xs hover:bg-accent ${dock === d ? "font-semibold" : ""}`}
+                onClick={() => persistDock(d)}>{d}</button>
+            ))}
+          </div>
+        </details>
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 5: Run — confirm pass.**
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add package.json package-lock.json src/components/reader/dockable-sidebar.tsx src/components/reader/dockable-sidebar.test.tsx
+git commit -m "feat(reader): DockableSidebar wrapper with resize + dock position"
+```
+
+### Task 28: Wrap each right-side sidebar with `DockableSidebar`
+
+**Files:**
+- Modify: `src/app/(reader)/reader/[documentId]/reader-client.tsx`
+
+- [ ] **Step 1:** For each rendered sidebar (OutlineSidebar, HighlightsSidebar, ChatPanel, CitationsSidebar — NOT the `ConceptsPanel`/`CommentThread` which are removed in later tasks), wrap with `<DockableSidebar id="outline">…</DockableSidebar>` etc. Each needs a unique `id`.
+
+- [ ] **Step 2: Manual smoke**
+
+Run: `npm run dev`; open a reader; toggle each sidebar; drag the handle to resize; change dock to bottom; reload → position/size persist.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git commit -am "feat(reader): wrap right sidebars with DockableSidebar"
+```
+
+### Task 29: Collapsible top toolbar
+
+**Files:**
+- Modify: `src/hooks/use-reader-state.ts`
+- Modify: `src/components/reader/reader-toolbar.tsx`
+
+- [ ] **Step 1: Extend `useReaderState` with `toolbarCollapsed`**
+
+```ts
+// use-reader-state.ts — append to state:
+toolbarCollapsed: boolean;
+setToolbarCollapsed: (v: boolean) => void;
+
+// in store body:
+toolbarCollapsed: typeof window !== "undefined" && localStorage.getItem("toolbarCollapsed") === "1",
+setToolbarCollapsed: (v) => {
+  set({ toolbarCollapsed: v });
+  if (typeof window !== "undefined") localStorage.setItem("toolbarCollapsed", v ? "1" : "0");
+},
+```
+
+- [ ] **Step 2: Render collapsed state in `reader-toolbar.tsx`**
+
+```tsx
+const collapsed = useReaderState((s) => s.toolbarCollapsed);
+const setCollapsed = useReaderState((s) => s.setToolbarCollapsed);
+
+if (collapsed) {
+  return (
+    <div
+      className="h-2 w-full cursor-pointer border-b bg-muted/40 hover:h-12 hover:bg-background"
+      onMouseEnter={() => setCollapsed(false)}
+      aria-label="Expand toolbar"
+      role="button"
+    />
+  );
+}
+
+// existing toolbar JSX, then add a collapse chevron:
+<Button variant="ghost" size="sm" onClick={() => setCollapsed(true)} aria-label="Collapse toolbar">⇡</Button>
+```
+
+- [ ] **Step 3: Manual smoke.** Click chevron → toolbar collapses; hover reveals; reload persists.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git commit -am "feat(reader): collapsible top toolbar with hover-reveal"
+```
+
+### Task 30: Rewrite `OutlineSidebar` — Pages + Contents tabs driven by `pdf.getOutline()` (feature b)
+
+**Files:**
+- Rewrite: `src/components/reader/outline-sidebar.tsx`
+- Create: `src/components/reader/outline-sidebar.test.tsx`
+- Modify: `src/app/(reader)/reader/[documentId]/reader-client.tsx` (load `pdf.getOutline()` once, pass to sidebar)
+
+The `/api/documents/[id]/outline` route stays (Phase 4.0 fallback) but no longer drives this sidebar.
+
+- [ ] **Step 1: Write the failing test**
+
+```tsx
+// outline-sidebar.test.tsx
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { OutlineSidebar } from "./outline-sidebar";
+
+describe("OutlineSidebar", () => {
+  it("always shows Pages tab; navigates on page click", () => {
+    const onNav = vi.fn();
+    render(<OutlineSidebar totalPages={5} pdfOutline={null} onNavigate={onNav} />);
+    expect(screen.getByRole("tab", { name: /pages/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /contents/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^page 3$/i }));
+    expect(onNav).toHaveBeenCalledWith(3);
+  });
+
+  it("shows Contents tab when pdfOutline is non-empty", () => {
+    const outline = [{ title: "Intro", pageIndex: 0, items: [] }];
+    render(<OutlineSidebar totalPages={5} pdfOutline={outline} onNavigate={() => {}} />);
+    expect(screen.getByRole("tab", { name: /contents/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /contents/i }));
+    expect(screen.getByText("Intro")).toBeInTheDocument();
+  });
+});
+```
+
+- [ ] **Step 2: Run — confirm fail.**
+
+- [ ] **Step 3: Rewrite the component**
+
+```tsx
+// src/components/reader/outline-sidebar.tsx
+"use client";
+import { useState } from "react";
+
+export interface PdfOutlineItem {
+  title: string;
+  pageIndex: number | null;
+  items: PdfOutlineItem[];
+}
+
+interface Props {
+  totalPages: number;
+  pdfOutline: PdfOutlineItem[] | null;
+  onNavigate: (pageNumber: number) => void;
+}
+
+export function OutlineSidebar({ totalPages, pdfOutline, onNavigate }: Props) {
+  const hasContents = !!(pdfOutline && pdfOutline.length > 0);
+  const [tab, setTab] = useState<"pages" | "contents">(hasContents ? "contents" : "pages");
+
+  return (
+    <div data-testid="outline-sidebar" className="flex h-full flex-col">
+      <div role="tablist" className="flex border-b">
+        <button role="tab" aria-selected={tab === "pages"} onClick={() => setTab("pages")} className="flex-1 p-2 text-xs">Pages</button>
+        {hasContents && (
+          <button role="tab" aria-selected={tab === "contents"} onClick={() => setTab("contents")} className="flex-1 p-2 text-xs">Contents</button>
+        )}
+      </div>
+      <div className="flex-1 overflow-auto p-2">
+        {tab === "pages" && (
+          <ul className="space-y-0.5">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <li key={p}>
+                <button onClick={() => onNavigate(p)} className="w-full rounded px-2 py-1 text-left text-xs hover:bg-accent">
+                  Page {p}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {tab === "contents" && hasContents && <OutlineTree items={pdfOutline!} onNavigate={onNavigate} />}
+      </div>
+    </div>
+  );
+}
+
+function OutlineTree({ items, onNavigate, level = 0 }: { items: PdfOutlineItem[]; onNavigate: (p: number) => void; level?: number }) {
+  return (
+    <ul className="space-y-0.5" style={{ paddingLeft: level * 8 }}>
+      {items.map((it, i) => (
+        <li key={i}>
+          <button onClick={() => it.pageIndex != null && onNavigate(it.pageIndex + 1)} className="w-full text-left text-xs hover:underline">
+            {it.title}
+          </button>
+          {it.items.length > 0 && <OutlineTree items={it.items} onNavigate={onNavigate} level={level + 1} />}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+- [ ] **Step 4: Load `pdf.getOutline()` from `reader-client.tsx` and pass in**
+
+```tsx
+const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[] | null>(null);
+
+useEffect(() => {
+  if (!pdfDocument) return;
+  let cancelled = false;
+  (async () => {
+    const raw = await pdfDocument.getOutline();
+    const normalize = async (items: any[]): Promise<PdfOutlineItem[]> =>
+      Promise.all((items ?? []).map(async (it) => {
+        let pageIndex: number | null = null;
+        try {
+          if (Array.isArray(it.dest)) pageIndex = await pdfDocument.getPageIndex(it.dest[0]);
+          else if (typeof it.dest === "string") {
+            const resolved = await pdfDocument.getDestination(it.dest);
+            if (resolved && Array.isArray(resolved)) pageIndex = await pdfDocument.getPageIndex(resolved[0]);
+          }
+        } catch { /* silent — leaves pageIndex null */ }
+        return { title: it.title ?? "", pageIndex, items: await normalize(it.items ?? []) };
+      }));
+    const normalized = await normalize(raw ?? []);
+    if (!cancelled) setPdfOutline(normalized.length > 0 ? normalized : null);
+  })();
+  return () => { cancelled = true; };
+}, [pdfDocument]);
+
+// later: <OutlineSidebar totalPages={totalPages} pdfOutline={pdfOutline} onNavigate={setScrollTargetPage} />
+```
+
+- [ ] **Step 5: Run — confirm pass.** `npx vitest run src/components/reader/outline-sidebar.test.tsx`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -u
+git commit -m "feat(reader): OutlineSidebar Pages+Contents tabs driven by pdf.getOutline()"
+```
+
+### Task 31: Keyword search — `Ctrl/Cmd+F` + `FindBar` (feature e)
+
+**Files:**
+- Create: `src/hooks/use-pdf-find.ts`
+- Create: `src/components/reader/find-bar.tsx`
+- Create: `src/components/reader/find-bar.test.tsx`
+- Modify: `src/app/(reader)/reader/[documentId]/reader-client.tsx`
+
+- [ ] **Step 1: Write the failing component test**
+
+```tsx
+// find-bar.test.tsx
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { FindBar } from "./find-bar";
+
+describe("FindBar", () => {
+  it("calls onSearch on input change", () => {
+    const onSearch = vi.fn();
+    render(<FindBar open onSearch={onSearch} onNext={() => {}} onPrev={() => {}} onClose={() => {}} onToggleCase={() => {}} matchCase={false} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "loss" } });
+    expect(onSearch).toHaveBeenCalledWith("loss", { matchCase: false });
+  });
+
+  it("Esc calls onClose", () => {
+    const onClose = vi.fn();
+    render(<FindBar open onSearch={()=>{}} onNext={() => {}} onPrev={() => {}} onClose={onClose} onToggleCase={() => {}} matchCase={false} />);
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 2: Run — confirm fail.**
+
+- [ ] **Step 3: Implement `FindBar`**
+
+```tsx
+// src/components/reader/find-bar.tsx
+"use client";
+import { useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+interface Props {
+  open: boolean;
+  matchCase: boolean;
+  onSearch: (q: string, opts: { matchCase: boolean }) => void;
+  onNext: () => void;
+  onPrev: () => void;
+  onToggleCase: () => void;
+  onClose: () => void;
+}
+
+export function FindBar({ open, matchCase, onSearch, onNext, onPrev, onToggleCase, onClose }: Props) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (open) ref.current?.focus(); }, [open]);
+  if (!open) return null;
+  return (
+    <div className="flex items-center gap-2 border-b bg-background px-3 py-1">
+      <Input
+        ref={ref}
+        className="h-7 text-xs"
+        placeholder="Find in document…"
+        onChange={(e) => onSearch(e.target.value, { matchCase })}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+          if (e.key === "Enter") (e.shiftKey ? onPrev : onNext)();
+        }}
+      />
+      <Button size="sm" variant="ghost" onClick={onPrev}>Prev</Button>
+      <Button size="sm" variant="ghost" onClick={onNext}>Next</Button>
+      <label className="flex items-center gap-1 text-xs">
+        <input type="checkbox" checked={matchCase} onChange={onToggleCase} /> Match case
+      </label>
+      <Button size="sm" variant="ghost" onClick={onClose}>×</Button>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 4: Implement `use-pdf-find.ts`**
+
+```ts
+// src/hooks/use-pdf-find.ts
+"use client";
+import { useCallback, useEffect, useRef } from "react";
+import { EventBus, PDFFindController, PDFLinkService } from "pdfjs-dist/web/pdf_viewer.mjs";
+
+export function usePdfFind(pdfDocument: any) {
+  const findCtrlRef = useRef<PDFFindController | null>(null);
+
+  useEffect(() => {
+    if (!pdfDocument) return;
+    const eventBus = new EventBus();
+    const linkService = new PDFLinkService({ eventBus });
+    linkService.setDocument(pdfDocument, null);
+    const controller = new PDFFindController({ linkService, eventBus, updateMatchesCountOnProgress: true });
+    controller.setDocument(pdfDocument);
+    findCtrlRef.current = controller;
+    return () => {
+      findCtrlRef.current = null;
+    };
+  }, [pdfDocument]);
+
+  const search = useCallback((query: string, opts: { matchCase: boolean }) => {
+    findCtrlRef.current?.executeCommand("find", {
+      query, caseSensitive: opts.matchCase, entireWord: false, phraseSearch: true, highlightAll: true, findPrevious: false,
+    });
+  }, []);
+  const next = useCallback(() => findCtrlRef.current?.executeCommand("findagain", { findPrevious: false }), []);
+  const prev = useCallback(() => findCtrlRef.current?.executeCommand("findagain", { findPrevious: true }),  []);
+
+  return { search, next, prev };
+}
+```
+
+- [ ] **Step 5: Wire into `reader-client.tsx`**
+
+```tsx
+const [findOpen, setFindOpen] = useState(false);
+const [matchCase, setMatchCase] = useState(false);
+const find = usePdfFind(pdfDocument);
+
+useEffect(() => {
+  const onKey = (e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      setFindOpen(true);
+    }
+  };
+  window.addEventListener("keydown", onKey);
+  return () => window.removeEventListener("keydown", onKey);
+}, []);
+
+// render below toolbar:
+<FindBar
+  open={findOpen}
+  matchCase={matchCase}
+  onSearch={(q, opts) => find.search(q, opts)}
+  onNext={find.next}
+  onPrev={find.prev}
+  onToggleCase={() => setMatchCase((v) => !v)}
+  onClose={() => setFindOpen(false)}
+/>
+```
+
+- [ ] **Step 6: Run — confirm pass.** `npx vitest run src/components/reader/find-bar.test.tsx`
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -u
+git commit -m "feat(reader): Ctrl/Cmd+F keyword search with FindBar + match-case"
+```
+
+### Task 32: Remove legacy Explain tab — delete `concepts-panel` + `/api/ai/explain`
+
+**Files:**
+- Delete: `src/components/reader/concepts-panel.tsx`
+- Delete: `src/app/api/ai/explain/route.ts`
+- Modify: `src/components/reader/reader-toolbar.tsx`
+- Modify: `src/app/(reader)/reader/[documentId]/reader-client.tsx`
+
+- [ ] **Step 1: Verify no other callers**
+
+Run: `grep -rn "concepts-panel\|ConceptsPanel\|api/ai/explain" src/ tests/ e2e/`
+Expected: matches only the four files above.
+
+- [ ] **Step 2: Delete files**
+
+```bash
+git rm src/components/reader/concepts-panel.tsx src/app/api/ai/explain/route.ts
+```
+
+- [ ] **Step 3: Drop toolbar props + button**
+
+Remove `conceptsOpen`, `onToggleConcepts` props and the `Explain` button from `reader-toolbar.tsx`. Remove `concepts*` state and `<ConceptsPanel>` render in `reader-client.tsx`.
+
+- [ ] **Step 4: Verify typecheck + tests**
+
+Run: `npm run build && npx vitest run && npx playwright test --reporter=line`
+Expected: green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -u
+git commit -m "feat(reader): remove legacy Explain tab (replaced by Ask-AI on highlight in Task 33)"
+```
+
+### Task 33: Selection toolbar — add Comment + Ask-AI; wire comment persistence; extend HighlightsSidebar (feature f, f1)
+
+**Files:**
+- Modify: `src/components/reader/selection-toolbar.tsx`
+- Modify: `src/components/reader/selection-toolbar.test.tsx` (new if missing)
+- Modify: `src/components/reader/highlights-sidebar.tsx`
+- Modify: `src/app/(reader)/reader/[documentId]/reader-client.tsx`
+- Modify: `src/app/api/documents/[id]/highlights/route.ts` (support PATCH `comment`)
+- Create: `src/app/api/documents/[id]/highlights/[highlightId]/route.ts` (PATCH)
+
+- [ ] **Step 1: Write failing tests**
+
+```tsx
+// selection-toolbar.test.tsx
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { SelectionToolbar } from "./selection-toolbar";
+
+const rect = { top: 100, left: 100, width: 50, height: 20 };
+
+describe("SelectionToolbar new actions", () => {
+  it("Comment reveals textarea, Save calls onComment with text", () => {
+    const onComment = vi.fn();
+    render(<SelectionToolbar rect={rect} onHighlight={() => {}} onDismiss={() => {}} onComment={onComment} onAskAi={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /comment/i }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(onComment).toHaveBeenCalledWith("hello");
+  });
+
+  it("Ask AI triggers onAskAi", () => {
+    const onAskAi = vi.fn();
+    render(<SelectionToolbar rect={rect} onHighlight={() => {}} onDismiss={() => {}} onComment={() => {}} onAskAi={onAskAi} />);
+    fireEvent.click(screen.getByRole("button", { name: /ask ai/i }));
+    expect(onAskAi).toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 2: Run — confirm fail.**
+
+- [ ] **Step 3: Extend `SelectionToolbar`**
+
+```tsx
+// selection-toolbar.tsx — add props + UI
+interface SelectionToolbarProps {
+  rect: { top: number; left: number; width: number; height: number };
+  onHighlight: (color: HighlightColor) => void;
+  onDismiss: () => void;
+  onComment: (text: string) => void;
+  onAskAi: () => void;
+}
+
+// internal state: const [mode, setMode] = useState<"main" | "comment">("main");
+// main mode: existing color buttons + new [Comment] + [Ask AI] + Cancel
+// comment mode: textarea + Save + Back
+```
+
+- [ ] **Step 4: Implement PATCH route** at `/api/documents/[id]/highlights/[highlightId]/route.ts` that accepts `{ comment?: string }` and updates the row (authorize via session + `userId` match).
+
+- [ ] **Step 5: Wire in `reader-client.tsx`**
+
+- `onComment(text)`: after a `POST /highlights` completes and returns the new id, PATCH `/highlights/[id]` with `{ comment: text }`, then refresh highlights sidebar.
+- `onAskAi()`: set chat sidebar open + seed chat input with the selected `textContent`, focus input.
+
+- [ ] **Step 6: Extend `HighlightsSidebar`**
+
+- Show `h.comment` inline under `textContent` when present.
+- Add per-row "Ask AI" button that opens chat with that highlight's `textContent` seeded.
+
+- [ ] **Step 7: Run — tests green; typecheck clean.**
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -u
+git commit -m "feat(reader): highlight-panel Comment + Ask-AI; HighlightsSidebar shows comments + Ask-AI"
+```
+
+### Task 34: Remove legacy comment UI + `user_comments` table
+
+**Files:**
+- Delete: `src/components/reader/comment-input.tsx`
+- Delete: `src/components/reader/comment-thread.tsx`
+- Delete: `src/app/api/documents/[id]/comments/route.ts`
+- Delete: `src/db/schema/user-comments.ts`
+- Modify: `src/db/schema/index.ts` (drop re-export)
+- Modify: `src/components/reader/reader-toolbar.tsx` (drop `onAddComment`, `showCommentInput`, `onToggleCommentSidebar`, `commentSidebarOpen`)
+- Modify: `src/app/(reader)/reader/[documentId]/reader-client.tsx` (drop state + renders)
+- Generate: `drizzle/0004_drop_user_comments.sql`
+
+- [ ] **Step 1: Verify no other callers**
+
+Run: `grep -rn "userComments\|user-comments\|CommentThread\|CommentInput\|/api/documents/.*/comments" src/ e2e/ tests/`
+Expected: only the files listed above.
+
+- [ ] **Step 2: Delete components + route + schema**
+
+```bash
+git rm src/components/reader/comment-input.tsx src/components/reader/comment-thread.tsx src/app/api/documents/[id]/comments/route.ts src/db/schema/user-comments.ts
+```
+
+- [ ] **Step 3:** Remove the `user-comments` re-export from `src/db/schema/index.ts`.
+
+- [ ] **Step 4: Generate drop migration**
+
+Run: `npx drizzle-kit generate`
+Expected: `drizzle/0004_drop_user_comments.sql` containing `DROP TABLE "user_comments";`.
+Run: `npx drizzle-kit migrate`
+
+- [ ] **Step 5: Clean toolbar + reader-client.tsx**
+
+Remove every reference to the 4 comment-related props + the comment state + the `<CommentThread>`/`<CommentInput>` renders.
+
+- [ ] **Step 6: Run typecheck + all tests**
+
+Run: `npm run build && npx vitest run && npx playwright test --reporter=line`
+Expected: green.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -u drizzle/
+git commit -m "feat(reader): remove legacy comment UI and user_comments table (replaced by highlight-panel comments)"
+```
+
+### Task 35: Pinch / trackpad zoom (feature g)
+
+**Files:**
+- Modify: `src/components/reader/pdf-viewer.tsx`
+- Create: `src/components/reader/pdf-viewer.pinch.test.tsx`
+
+- [ ] **Step 1: Write failing test**
+
+```tsx
+// pdf-viewer.pinch.test.tsx
+import { describe, it, expect } from "vitest";
+import { render, fireEvent } from "@testing-library/react";
+import { PdfViewer } from "./pdf-viewer";
+import { useReaderState } from "@/hooks/use-reader-state";
+
+describe("PdfViewer pinch zoom", () => {
+  it("ctrl+wheel up increases zoom, down decreases", () => {
+    useReaderState.setState({ zoom: 1.0 });
+    const { container } = render(<PdfViewer url="about:blank" />);
+    const el = container.querySelector(".overflow-auto") as HTMLElement;
+    fireEvent.wheel(el, { deltaY: -100, ctrlKey: true });
+    expect(useReaderState.getState().zoom).toBeGreaterThan(1.0);
+    fireEvent.wheel(el, { deltaY: 100, ctrlKey: true });
+    expect(useReaderState.getState().zoom).toBeLessThanOrEqual(1.0);
+  });
+});
+```
+
+- [ ] **Step 2: Run — confirm fail.**
+
+- [ ] **Step 3: Add wheel listener in `pdf-viewer.tsx`**
+
+```tsx
+useEffect(() => {
+  const el = containerRef.current;
+  if (!el) return;
+  const onWheel = (e: WheelEvent) => {
+    if (!e.ctrlKey) return;           // trackpad pinch fires ctrl+wheel
+    e.preventDefault();
+    const setZoom = useReaderState.getState().setZoom;
+    const cur = useReaderState.getState().zoom;
+    const factor = Math.exp(-e.deltaY * 0.005);
+    setZoom(cur * factor);
+  };
+  el.addEventListener("wheel", onWheel, { passive: false });
+  return () => el.removeEventListener("wheel", onWheel);
+}, [containerRef]);
+```
+
+- [ ] **Step 4: Run — confirm pass.**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -am "feat(reader): trackpad pinch / ctrl+wheel zoom"
+```
+
+### Task 36: Chat history drawer — `/api/documents/[id]/conversations` + ChatPanel header icon (feature h)
+
+**Files:**
+- Create: `src/app/api/documents/[id]/conversations/route.ts` (GET list)
+- Create: `src/app/api/conversations/[conversationId]/messages/route.ts` (GET messages — skip if already present)
+- Modify: `src/components/reader/chat-panel.tsx`
+- Modify: `src/hooks/use-chat.ts`
+- Create: `e2e/chat-history.spec.ts`
+
+- [ ] **Step 1: Write failing API test**
+
+```ts
+// e2e/chat-history.spec.ts
+import { test, expect } from "@playwright/test";
+const DOC_ID = /* seed doc id from fixtures */ 1;
+
+test("GET /api/documents/:id/conversations returns ordered list", async ({ request }) => {
+  const res = await request.get(`/api/documents/${DOC_ID}/conversations`);
+  expect(res.ok()).toBeTruthy();
+  const body = await res.json();
+  expect(Array.isArray(body.conversations)).toBe(true);
+});
+```
+
+- [ ] **Step 2: Run — confirm fail.**
+
+- [ ] **Step 3: Implement `GET /api/documents/[id]/conversations`**
+
+```ts
+// src/app/api/documents/[id]/conversations/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/db";
+import { agentConversations } from "@/db/schema";
+import { and, desc, eq } from "drizzle-orm";
+import { auth } from "@/lib/auth";
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth.api.getSession({ headers: req.headers });
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const { id } = await params;
+  const documentId = Number(id);
+  const rows = await db.select().from(agentConversations)
+    .where(and(eq(agentConversations.documentId, documentId), eq(agentConversations.userId, session.user.id)))
+    .orderBy(desc(agentConversations.createdAt));
+  return NextResponse.json({ conversations: rows });
+}
+```
+
+If `/api/conversations/[conversationId]/messages` does not yet exist, create a matching GET route returning the ordered `agent_messages` rows for that conversation (authorize via session + join on `agentConversations.userId`).
+
+- [ ] **Step 4: Extend `ChatPanel`**
+
+```tsx
+// chat-panel.tsx — add history icon (top-right of header) + inline drawer
+// state: historyOpen, conversations list loaded on open
+// on thread click: call loadConversation(id) from use-chat
+// "New conversation" button → setConversationId(null); clear messages
+```
+
+- [ ] **Step 5: Extend `use-chat.ts`**
+
+Add an optional `conversationId` the caller can set via a `loadConversation(id)` function; on load, fetch messages from `/api/conversations/[id]/messages` and replace `messages` state. On `sendMessage`, include the current `conversationId` in the request body; the server either continues that thread or creates a new one and returns the id for the client to adopt.
+
+- [ ] **Step 6: Run — tests green + manual smoke**
+
+Run: `npx playwright test e2e/chat-history.spec.ts`. Open reader, chat twice, reload, open history drawer → both threads listed → click older → messages reload. Click "New conversation" → blank state.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -u
+git commit -m "feat(chat): conversation history drawer + resumable threads"
+```
+
+### E2E Gate — Phase 2.0.2 (Chrome DevTools MCP)
+
+Invoke the `e2e-testing` skill once before beginning the gate sequence; then drive the reader with `chrome-devtools-mcp` in a single session:
+
+- [ ] `navigate_page` to `/reader/{docId}` (existing processed PDF).
+- [ ] `take_snapshot` — highlight sidebar exists; toolbar present.
+- [ ] Select text → verify `SelectionToolbar` shows Color swatches + Comment + Ask AI + Cancel buttons (`take_snapshot`).
+- [ ] Click yellow swatch → reload → `evaluate_script` that `document.querySelectorAll('[data-highlight-id]').length >= 1` (feature a).
+- [ ] Select more text → click Comment → `type_text` "test note" → Save → reload → `HighlightsSidebar` row shows the note.
+- [ ] Select text → click Ask AI → `wait_for` chat sidebar; assert chat textarea value contains the selected snippet (f1).
+- [ ] Open outline sidebar → verify Pages tab (always) and Contents tab when native outline present (b).
+- [ ] `press_key` `Ctrl+F` (or `Meta+F`) → `FindBar` visible, input focused; `type_text` a known token → next/prev advances; toggle Match case narrows results (e).
+- [ ] `evaluate_script` → Explain toolbar button absent; `/api/ai/explain` returns 404; legacy comment top-bar button absent.
+- [ ] Dispatch ctrl+wheel on PDF container → zoom changes, clamped 0.5–3 (g).
+- [ ] Drag the sidebar resize handle → width updates; open dock menu → pick `bottom` → sidebar re-docks; reload persists (§0.5).
+- [ ] Click collapse chevron → toolbar collapses; hover reveals; reload persists.
+- [ ] Open chat panel → send message → click history icon → list shows this thread → click "New conversation" → empty state → click prior thread → messages reload (h).
+- [ ] `list_console_messages` empty; `list_network_requests` zero 4xx/5xx.
+- [ ] `take_screenshot` per feature for visual archive (save to `e2e/phase202-*.png`).
+
+Mark `2.0.2` **DONE** in the Progress table; commit.
+
+---
+
+## Phase 2.0.3 — LangChain / LangGraph migration (OUTLINE)
+
+**Spec:** §2. **Kickoff ritual:** invoke `langchain-skills:framework-selection`; record primitive decisions as an inline amendment to spec §2. Install deps per `langchain-skills:langchain-dependencies`.
+
+**Locked constraint:** every existing Phase 1 route-handler contract (request + response shape) stays byte-identical. The existing Playwright suite at `e2e/ai-features.spec.ts` must pass unchanged.
+
+**Tasks (expand to full TDD detail at kickoff):**
+- [ ] Task 37a: Install `langchain`, `@langchain/langgraph`, `@langchain/openai`. Add `src/lib/ai/llm.ts` — LLM factory wired to OpenRouter via `getDecryptedApiKey`.
+- [ ] Task 37b: Add `src/lib/ai/rag-tool.ts` — LangChain tool wrapping pgvector retrieval over `document_chunks` (informs Phases 2.1 and 3.0b).
+- [ ] Task 37c: Port `/api/documents/[id]/chat/route.ts` to LangChain primitives with SSE adapter. Request/response unchanged.
+- [ ] Task 37d: Port `/api/documents/[id]/outline/route.ts` (kept for 4.0 fallback).
+- [ ] Task 37e: Conversation persistence via `langchain-skills:langgraph-persistence`, backed by `agent_conversations` + `agent_messages`.
+- [ ] Task 37f: Delete `src/lib/ai/openrouter.ts` and every `@openrouter/sdk` import once callers migrate. Keep `src/lib/ai/embeddings.ts` unchanged.
+
+### E2E Gate — Phase 2.0.3
+
+- [ ] Existing `e2e/ai-features.spec.ts` passes with zero edits.
+- [ ] Chrome DevTools MCP: open chat panel, send a message, streaming response arrives as before.
+- [ ] `take_screenshot` of chat response; commit as visual baseline.
+
+---
+
+## Phase 2.1 — AI Auto-Highlight (OUTLINE — rewritten)
+
+**Spec:** §3. The old classification-taxonomy version of 2.1 is explicitly replaced.
+
+**Tasks (expand at kickoff):**
+- [ ] Task 38: Schema — `ai_highlight_runs (id uuid PK, document_id, user_id, instruction text, model_used text, status text, summary text, created_at, completed_at)`.
+- [ ] Task 39: Tools — `semantic_search`, `page_text`, `locate_phrase`, `create_highlights`, `finish` (LangChain tools, reusing `rag-tool` from 2.0.3).
+- [ ] Task 40: Route `/api/documents/[id]/auto-highlight` — LangGraph tool-loop + SSE progress emits tool-use events.
+- [ ] Task 41: Slash parser `/highlight <instr>` in chat input; implicit routing through the chat agent's tool-selection (tools registered alongside existing chat tools).
+- [ ] Task 42: Highlights sidebar gains **Runs** section listing `ai_highlight_runs` with show/hide toggle (filters `UserHighlightLayer` by `layer_id`) + delete (cascades).
+- [ ] Task 43: Chat response "Review highlights" button → opens Highlights sidebar filtered to the run's `layer_id`.
+
+### E2E Gate — Phase 2.1
+
+- [ ] Type `/highlight where the loss function is described` → SSE progress visible → ≥1 overlay appears; run row in sidebar.
+- [ ] Toggle run off → overlays disappear; on → reappear.
+- [ ] Delete run → `user_highlights` rows with that `layer_id` are gone; overlays gone.
+- [ ] Free-form phrasing ("highlight all results in the discussion section") routes through the same tool-loop.
+- [ ] Zero 4xx/5xx; clean console.
+
+---
+
+## Phase 2.2 — Enriched Smart Citations (OUTLINE — rewritten)
+
+**Spec:** §4.
+
+**Tasks (expand at kickoff):**
+- [ ] Task 44: Extend `document_references` / `library_references` with `external_id`, `title`, `authors jsonb`, `venue`, `year`, `citation_count`, `open_access_pdf_url`, `abstract`.
+- [ ] Task 45: Enrichment route — fetch S2 `/paper/search` by title/DOI; cache response on row; batch 10 @ 500ms pacing; optional S2 API key via Settings to lift rate limits.
+- [ ] Task 46: New `CitationCard` component — title hyperlink (S2 paper page), per-author hyperlinks, venue/year/⭐ citation-count line, collapsible abstract, Save-to-References / Copy BibTeX / Open PDF actions.
+- [ ] Task 47: Replace the existing inline popover with `CitationCard`; render `CitationCard` compact as each row of the Citations tab list.
+- [ ] Task 48: Save-to-References writes `library_references`; `/library/references` page renders `CitationCard` compact + remove action.
+
+### E2E Gate — Phase 2.2
+
+- [ ] Open Citations tab → cards enrich with full S2 metadata; Save → toast → `/library/references` shows the entry.
+- [ ] Click a `[n]` marker / annotation in the PDF → inline popover renders the same `CitationCard`.
+- [ ] Hyperlinks open S2 in a new tab.
+- [ ] Zero 4xx/5xx; clean console.
+
+---
+
+## Phase 2.3 — Library Management (OUTLINE — lite)
+
+**Spec:** §5.
+
+**Tasks (expand at kickoff):**
+- [ ] Task 49: Library grid — rename modal + delete confirmation (context menu or hover actions).
+- [ ] Task 50: Sort dropdown — recently opened / upload date / title.
+- [ ] Task 51: Substring search input matching title + filename.
+- [ ] Task 52: `/library/references` page — renders saved `library_references` as `CitationCard` compact + remove action.
+
+**Out of scope** (explicit): collections / folders / tags / grid-list toggle / bulk operations / drag-to-collection. Deferred to a future follow-up if demand emerges.
+
+### E2E Gate — Phase 2.3
+
+- [ ] Rename doc → persists on reload.
+- [ ] Delete doc → removed from grid + DB.
+- [ ] Sort by title then by date → order updates both ways.
+- [ ] Search filters narrow the list.
+- [ ] `/library/references` round-trips Save → display → Remove.
 
 ---
 
 # Phase 3: Advanced AI (Task Outlines)
 
-## Phase 3.0 — Figure & Formula Enhancement
+> **Spec reference:** `docs/superpowers/specs/2026-04-13-inhale-phases-2-to-5-design.md` §6–§10. Outlines only — expand to full TDD detail at each phase's kickoff.
 
-**DB:** `document_figures`, `document_formulas` tables
+## Phase 3.0a — Smart Explanation: detection + icon overlays (OUTLINE — new)
 
-**Tasks:**
-- [ ] Task 33: Figure/formula Drizzle schemas
-- [ ] Task 34: Figure detection job (Next.js route handler — extract bounding boxes, crop images)
-- [ ] Task 35: Formula extraction task (Mistral OCR → LaTeX)
-- [ ] Task 36: Click-to-zoom figure component with AI explanation
-- [ ] Task 37: Formula explanation panel with KaTeX rendering
+**Spec:** §6. **Kickoff ritual:** invoke `chandra-ocr` skill; record its API shape, segment kinds, and bbox coordinate space as an inline amendment to spec §6.
+
+**Tasks (expand at kickoff):**
+- [ ] Task 53: Schema — `document_segments (id, document_id, page, kind, bbox jsonb, payload jsonb, order_index)`. `kind` enum and exact payload shape per skill output.
+- [ ] Task 54: Two-tier upload pipeline — `unpdf` remains primary (Phase 1.1 behavior preserved); Chandra "accurate" runs additionally when user has a Chandra key; populates `document_segments`. Silent no-op when no key.
+- [ ] Task 55: `ExplainMarkerLayer` — one 16px icon per segment (chapter `#`, figure 🖼, formula Σ), anchored at `bbox.right + 4px, bbox.top`, blurred-pill background, subtle until hover.
+- [ ] Task 56: Click handler — opens Chat sidebar with seed message "Explain this [type]". In 3.0a, the response is the raw payload (caption / LaTeX / heading) — intelligence arrives in 3.0b.
+- [ ] Task 57: Settings banner when Chandra key is absent: "Configure Chandra key to enable Smart Explanations on figures and formulas."
+
+### E2E Gate — Phase 3.0a
+
+- [ ] With Chandra configured: upload paper → icons render on page 1; each icon variant present.
+- [ ] Click each variant → chat opens with expected seed message.
+- [ ] Without Chandra: no icons; settings banner visible.
+
+## Phase 3.0b — Smart Explanation: agent + history (OUTLINE — new)
+
+**Spec:** §7.
+
+**Tasks (expand at kickoff):**
+- [ ] Task 58: Extend the LangGraph explanation agent with tools `page_context(page)`, `paper_rag(query)` (reuses 2.0.3 RAG), `figure_caption(figureId)`, `formula_latex(formulaId)`.
+- [ ] Task 59: Starter-prompt generator per element type (chapter / figure / formula). Formula prompt asks the agent to LaTeX-list each symbol with a brief definition, then explain.
+- [ ] Task 60: Add `react-katex`; render math in chat messages. (Copy-LaTeX shipped in 4.0.)
+- [ ] Task 61: Schema — `agent_conversations.kind text default 'chat'`, `agent_conversations.segment_id int null references document_segments(id)`.
+- [ ] Task 62: Chat history drawer (from Task 36) gains a kind filter ("Explanations only / All") plus per-kind badges (formula / figure / chapter).
+
+### E2E Gate — Phase 3.0b
+
+- [ ] Click a formula icon → KaTeX-rendered explanation streams.
+- [ ] History drawer lists the thread with a formula badge.
+- [ ] Filter "Explanations only" hides regular chat threads.
 
 ## Phase 3.1 — External Links & Deep References
 
-**DB:** `document_links` table
+**Spec:** §8. Unchanged from prior plan.
 
-**Tasks:**
-- [ ] Task 38: Link extraction from PDF text layer
-- [ ] Task 39: DOI/URL resolution and open-access link finder
-- [ ] Task 40: Related paper suggestions via Semantic Scholar
+**Tasks (expand at kickoff):**
+- [ ] Task 63: Link extraction from the PDF text layer + link annotations (reuse 2.0.1 annotation-extractor infra).
+- [ ] Task 64: DOI / URL resolution + open-access link finder.
+- [ ] Task 65: Related-paper suggestions via Semantic Scholar.
+
+### E2E Gate — Phase 3.1
+
+- [ ] Hover a DOI → popover with resolved metadata.
+- [ ] Related Papers section renders S2 suggestions; click → new tab.
 
 ## Phase 3.2 — Voice Mode (Push-to-Talk)
 
-**Tasks:**
-- [ ] Task 41: WebSocket endpoint for bidirectional audio streaming
-- [ ] Task 42: MediaRecorder + Web Audio API frontend
-- [ ] Task 43: STT integration (ElevenLabs/OpenRouter)
-- [ ] Task 44: TTS streaming response
-- [ ] Task 45: Voice orb UI (idle/listening/processing/speaking states)
-- [ ] Task 46: Interruption handling (spacebar during playback)
+**Spec:** §9. **Kickoff ritual:** invoke ElevenLabs skills `agents`, `speech-to-text`, `text-to-speech`; record chosen APIs inline in spec §9.
+
+**Tasks (expand at kickoff):**
+- [ ] Task 66: WebSocket endpoint for bidirectional audio streaming.
+- [ ] Task 67: MediaRecorder + Web Audio API frontend.
+- [ ] Task 68: STT integration (per `speech-to-text` skill).
+- [ ] Task 69: TTS streaming response (per `text-to-speech` skill).
+- [ ] Task 70: Voice orb UI — idle / listening / processing / speaking states.
+- [ ] Task 71: Interruption handling — spacebar during playback cancels.
+
+### E2E Gate — Phase 3.2
+
+- [ ] Orb state transitions as expected; mic permission requested.
+- [ ] Spacebar during playback interrupts.
+- [ ] WebSocket connection visible in `list_network_requests`.
 
 ## Phase 3.3 — BibTeX Export
 
-**Tasks:**
-- [ ] Task 47: BibTeX formatter service
-- [ ] Task 48: Export API route (`/api/library/export?format=bibtex`)
-- [ ] Task 49: Copy-single-citation button on citation cards
+**Spec:** §10. Per-ref BibTeX already ships via `CitationCard` (2.2). This phase adds bulk export.
+
+**Tasks (expand at kickoff):**
+- [ ] Task 72: Shared BibTeX formatter service.
+- [ ] Task 73: `/api/library/export?format=bibtex` — concatenates BibTeX for the user's `library_references`.
+- [ ] Task 74: Export button on `/library/references`.
+
+### E2E Gate — Phase 3.3
+
+- [ ] Click Export BibTeX → file downloads; content parses (contains `@article{` / `@inproceedings{`).
+- [ ] Per-card Copy BibTeX (from 2.2) still works.
 
 ---
 
-# Phase 4: Polish & Scale (Task Outlines)
+# Phase 4: AI Outline Fallback, Zotero, Image-PDF OCR (Task Outlines)
 
-## Phase 4.0 — Dark Mode
+> **Spec reference:** `docs/superpowers/specs/2026-04-13-inhale-phases-2-to-5-design.md` §11–§13.
 
-- [ ] Task 50: Toggle component using existing shadcn theme vars in `globals.css`
-- [ ] Task 51: CSS filter on PDF canvas for dark/sepia reading modes
+## Phase 4.0 — AI outline fallback + TTS + LaTeX copy (OUTLINE — new)
 
-## Phase 4.1 — Full-Text Search
+**Spec:** §11.
 
-- [ ] Task 52: PostgreSQL FTS across library (document titles, content)
-- [ ] Task 53: In-document search using PDF.js built-in search API
+**Tasks (expand at kickoff):**
+- [ ] Task 75: LLM outline generation when `pdf.getOutline()` is empty — prefers `section_header` segments, falls back to chunked text. Persist to existing `document_sections`.
+- [ ] Task 76: `OutlineSidebar` Contents tab renders native outline if present; else renders AI-generated with an "AI-generated" badge. Hidden if neither.
+- [ ] Task 77: TTS speaker icon per chat message → ElevenLabs TTS (invoke `text-to-speech` skill). BYOK key stored via existing `user_api_keys`.
+- [ ] Task 78: Copy-LaTeX action on formula `ExplainMarkerLayer` icons — pulls `payload.latex` from `document_segments` and writes to clipboard.
 
-## Phase 4.2 — Split View & Reading Memory
+### E2E Gate — Phase 4.0
 
-- [ ] Task 54: Side-by-side PDF tab view
-- [ ] Task 55: Remember last reading position per document (localStorage + DB sync)
+- [ ] Paper without native outline → Contents tab shows AI-generated + badge.
+- [ ] Click speaker on a chat message → audio plays.
+- [ ] Click Copy LaTeX on a formula icon → `navigator.clipboard.readText()` matches `payload.latex`.
 
-## Phase 4.3 — OAuth & Cloud Key Sync
+## Phase 4.1 — Zotero Import (OUTLINE — new)
 
-- [ ] Task 56: Better Auth OAuth plugins (Google, GitHub)
-- [ ] Task 57: Cloud key sync across devices
+**Spec:** §12.
 
-## Phase 4.4 — Performance & Production
+**Tasks (expand at kickoff):**
+- [ ] Task 79: Settings UI — Zotero section; stores API key + userID encrypted via existing `user_api_keys`.
+- [ ] Task 80: Library-page "Import from Zotero" button opens a modal.
+- [ ] Task 81: Fetch Zotero library via Web API; list items with PDF attachments; user selects subset.
+- [ ] Task 82: For each selection, download PDF → existing upload pipeline runs; progress indicator; cancellable.
 
-- [ ] Task 58: S3 file storage migration (swap local fs → S3 in `storage.ts`)
-- [ ] Task 59: CDN for static assets
-- [ ] Task 60: Rate limiting on API routes
-- [ ] Task 61: Sentry error tracking
-- [ ] Task 62: Virtual page rendering for large PDFs (only render visible + buffer)
+### E2E Gate — Phase 4.1
+
+- [ ] Paste key → modal lists items (mocked Zotero API in test); select 2; import; new `documents` rows appear; grid refreshes.
+
+## Phase 4.2 — Image-PDF OCR "AI Scan" (OUTLINE — new)
+
+**Spec:** §13. **Kickoff decision:** choose OCRmyPDF deployment mechanism (sidecar service / `python -m` subprocess / JS alternative).
+
+**Tasks (expand at kickoff):**
+- [ ] Task 83: Text-density detector in upload route; set `documents.needs_ocr = true` when thresholds met.
+- [ ] Task 84: Reader banner on `needs_ocr` documents — "Run AI Scan to make it readable".
+- [ ] Task 85: AI-Scan route runs Chandra (text + segments) AND OCRmyPDF (embeds a text layer into a new PDF). Writes chunks + segments; replaces `documents.file_path` with the OCR'd PDF; sets `ocr_applied_at`.
+- [ ] Task 86: Schema — `documents.needs_ocr boolean NOT NULL DEFAULT false`, `documents.ocr_applied_at timestamptz NULL`.
+
+### E2E Gate — Phase 4.2
+
+- [ ] Upload scanned PDF → banner appears → click AI Scan → wait for completion → text selectable → `Ctrl+F` finds a token → highlight works.
+
+---
+
+# Phase 5: Polish & Scale (Task Outlines — moved from old Phase 4)
+
+> **Spec reference:** `docs/superpowers/specs/2026-04-13-inhale-phases-2-to-5-design.md` §14. Numbering preserved for traceability.
+
+## Phase 5.0 — Dark Mode
+
+**Tasks (expand at kickoff):**
+- [ ] Task 87: Toggle component using existing shadcn theme vars in `globals.css`.
+- [ ] Task 88: CSS filter on PDF canvas for dark / sepia reading modes.
+
+### E2E Gate — Phase 5.0
+
+- [ ] Toggle → `<html class="dark">`; PDF canvas has filter applied; sepia swap works; light restores.
+
+## Phase 5.1 — Full-Text Search
+
+**Tasks (expand at kickoff):**
+- [ ] Task 89: Postgres FTS across library (document titles + chunked text).
+- [ ] Task 90: Cross-document results page. In-document search is already delivered in Phase 2.0.2 Task 31.
+
+### E2E Gate — Phase 5.1
+
+- [ ] Library search finds content across documents; click result → navigates to correct doc + page.
+
+## Phase 5.2 — Split View & Reading Memory
+
+**Tasks (expand at kickoff):**
+- [ ] Task 91: Side-by-side PDF pane view.
+- [ ] Task 92: Remember last reading position per document (localStorage + DB sync keyed to userId).
+
+### E2E Gate — Phase 5.2
+
+- [ ] Split view renders two PDFs with independent scroll + page. Returning to a doc resumes at last page.
+
+## Phase 5.3 — OAuth & Cloud Key Sync
+
+**Tasks (expand at kickoff):**
+- [ ] Task 93: Better Auth OAuth plugins (Google, GitHub).
+- [ ] Task 94: Cloud sync for user prefs — sidebar positions (from 2.0.2), reading position (5.2) — keyed to userId.
+
+### E2E Gate — Phase 5.3
+
+- [ ] OAuth buttons redirect to provider.
+- [ ] Sidebar state syncs across devices.
+
+## Phase 5.4 — Performance & Production
+
+**Tasks (expand at kickoff):**
+- [ ] Task 95: S3 file storage migration (swap local fs → S3 in `storage.ts`).
+- [ ] Task 96: CDN for static assets.
+- [ ] Task 97: Rate limiting on API routes.
+- [ ] Task 98: Sentry error tracking.
+- [ ] Task 99: Virtual page rendering for very large PDFs (extends existing buffer logic).
+
+### E2E Gate — Phase 5.4
+
+- [ ] 50+ page PDF uploads cleanly; only visible + buffer pages in DOM; `performance_analyze_insight` reports no jank over 20 scrolled pages; no 429 errors.
 
 ---
 
@@ -3200,7 +4626,15 @@ git commit -m "feat(rag): add Next.js RAG chat route and clean up client BYOK pl
 
 After each sub-phase:
 1. `npm run build` — zero TypeScript errors
-2. `npm run dev` — feature works in browser
+2. `npm run dev` — dev server starts without warnings
 3. `docker compose up -d` — Postgres (pgvector) is the only required service
-4. Manual test acceptance criteria per task
-5. Commit with descriptive message
+4. **TDD compliance** — every new function/route handler has a failing test written first, watched fail, then made green (see TDD skill)
+5. **Chrome DevTools E2E gate** — run the phase's E2E gate checklist using Chrome DevTools MCP:
+   - `navigate_page` to the feature
+   - `take_snapshot` to verify structure
+   - Interact (`click`, `fill`, `type_text`) to test golden path + edge cases
+   - `list_console_messages` — zero errors
+   - `list_network_requests` — zero 4xx/5xx
+   - `take_screenshot` for visual verification
+6. **No phase is marked DONE until its E2E gate passes**
+7. Commit with descriptive message

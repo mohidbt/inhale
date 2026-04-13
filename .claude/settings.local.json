@@ -110,7 +110,12 @@
       "Bash(rtk brew:*)",
       "Bash(gh auth:*)",
       "Bash(rtk gh:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(ln -s /Users/mohidbutt/Documents/Claudius/inhale/.env.local .env.local)",
+      "Bash(mkdir -p \"/Users/mohidbutt/Documents/Claudius/inhale/.worktrees/smart-citations/src/app/api/documents/[id]/citations/[refId]/keep\")",
+      "Bash(mkdir -p \"/Users/mohidbutt/Documents/Claudius/inhale/.worktrees/smart-citations/src/app/api/documents/[id]/citations/[refId]/save\")",
+      "Bash(PORT=3001 rtk npm:*)",
+      "Bash(kill %1)"
     ]
   }
 }
