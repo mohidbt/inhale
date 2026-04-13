@@ -8,7 +8,7 @@ import { HighlightsSidebar } from "@/components/reader/highlights-sidebar";
 import { CommentThread } from "@/components/reader/comment-thread";
 import { CommentInput } from "@/components/reader/comment-input";
 import { ChatPanel } from "@/components/reader/chat-panel";
-import { OutlineSidebar } from "@/components/reader/outline-sidebar";
+import { OutlineSidebar, type PdfOutlineItem } from "@/components/reader/outline-sidebar";
 import { ConceptsPanel } from "@/components/reader/concepts-panel";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
 import { CitationsSidebar } from "@/components/reader/citations-sidebar";
@@ -53,6 +53,9 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const pdfScrollRef = useRef<HTMLDivElement>(null);
   const { selection, clearSelection } = useTextSelection();
   const currentPage = useReaderState((s) => s.currentPage);
+  const totalPages = useReaderState((s) => s.totalPages);
+  const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[] | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<unknown>(null);
 
   // Citations
   const [citations, setCitations] = useState<CitationWithStatus[]>([]);
@@ -177,6 +180,52 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
     return () => clearTimeout(timer);
   }, [saveError]);
 
+  useEffect(() => {
+    if (!pdfDoc) return;
+    let cancelled = false;
+    (async () => {
+      const doc = pdfDoc as {
+        getOutline: () => Promise<Array<{ title: string; dest: unknown; items?: unknown[] }> | null>;
+        getPageIndex: (ref: unknown) => Promise<number>;
+        getDestination: (name: string) => Promise<unknown[] | null>;
+      };
+      const normalize = async (items: unknown[]): Promise<PdfOutlineItem[]> =>
+        Promise.all(
+          (items ?? []).map(async (raw) => {
+            const it = raw as { title?: string; dest?: unknown; items?: unknown[] };
+            let pageIndex: number | null = null;
+            try {
+              if (Array.isArray(it.dest)) {
+                pageIndex = await doc.getPageIndex(it.dest[0]);
+              } else if (typeof it.dest === "string") {
+                const resolved = await doc.getDestination(it.dest);
+                if (resolved && Array.isArray(resolved)) {
+                  pageIndex = await doc.getPageIndex(resolved[0]);
+                }
+              }
+            } catch {
+              /* leaves pageIndex null */
+            }
+            return {
+              title: it.title ?? "",
+              pageIndex,
+              items: await normalize(it.items ?? []),
+            };
+          })
+        );
+      try {
+        const raw = await doc.getOutline();
+        const normalized = await normalize(raw ?? []);
+        if (!cancelled) setPdfOutline(normalized.length > 0 ? normalized : null);
+      } catch {
+        if (!cancelled) setPdfOutline(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfDoc]);
+
   return (
     <div className="flex h-screen flex-col">
       <ReaderToolbar
@@ -215,7 +264,12 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         </div>
       )}
       <div className="relative flex flex-1 overflow-hidden">
-        <PdfViewer url={url} containerRef={pdfScrollRef} markers={markers} />
+        <PdfViewer
+          url={url}
+          containerRef={pdfScrollRef}
+          markers={markers}
+          onPdfLoad={setPdfDoc}
+        />
         {sidebarOpen && (
           <DockableSidebar id="highlights">
             <HighlightsSidebar documentId={documentId} open={sidebarOpen} refreshKey={refreshKey} />
@@ -238,8 +292,8 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         {outlineOpen && (
           <DockableSidebar id="outline" defaultDock="left">
             <OutlineSidebar
-              documentId={documentId}
-              open={outlineOpen}
+              totalPages={totalPages}
+              pdfOutline={pdfOutline}
               onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
             />
           </DockableSidebar>

@@ -38,9 +38,10 @@ interface PdfViewerProps {
   containerRef?: React.RefObject<HTMLDivElement | null>;
   markers?: MarkerRect[];
   userHighlights?: UserHighlight[];
+  onPdfLoad?: (pdf: unknown) => void;
 }
 
-export function PdfViewer({ url, containerRef: externalRef, markers = [], userHighlights = [] }: PdfViewerProps) {
+export function PdfViewer({ url, containerRef: externalRef, markers = [], userHighlights = [], onPdfLoad }: PdfViewerProps) {
   usePdfTextSelection();
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
@@ -58,11 +59,12 @@ export function PdfViewer({ url, containerRef: externalRef, markers = [], userHi
   const [scrollTop, setScrollTop] = useState(0);
 
   const onDocumentLoadSuccess = useCallback(
-    ({ numPages }: { numPages: number }) => {
+    (pdf: { numPages: number }) => {
       setLoading(false);
-      setTotalPages(numPages);
+      setTotalPages(pdf.numPages);
+      onPdfLoad?.(pdf);
     },
-    [setTotalPages]
+    [setTotalPages, onPdfLoad]
   );
 
   // Measure container width and height

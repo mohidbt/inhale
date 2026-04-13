@@ -1,92 +1,92 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { SectionPreview } from "./section-preview";
+import { useState } from "react";
 
-interface DocumentSection {
-  id: number;
-  documentId: number;
-  sectionIndex: number;
-  title: string | null;
-  content: string;
-  pageStart: number;
-  pageEnd: number;
-  createdAt: string;
+export interface PdfOutlineItem {
+  title: string;
+  pageIndex: number | null;
+  items: PdfOutlineItem[];
 }
 
-interface OutlineSidebarProps {
-  documentId: number;
-  open: boolean;
-  onNavigate?: (page: number) => void;
+interface Props {
+  totalPages: number;
+  pdfOutline: PdfOutlineItem[] | null;
+  onNavigate: (pageNumber: number) => void;
 }
 
-export function OutlineSidebar({ documentId, open, onNavigate }: OutlineSidebarProps) {
-  const [sections, setSections] = useState<DocumentSection[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadSections = useCallback(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    fetch(`/api/documents/${documentId}/outline`, { signal: controller.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data) => setSections(data.sections ?? []))
-      .catch((err: unknown) => {
-        if (err instanceof Error && err.name !== "AbortError") {
-          setError("Failed to load outline");
-        }
-      })
-      .finally(() => setLoading(false));
-    return () => controller.abort();
-  }, [documentId]);
-
-  useEffect(() => {
-    if (!open) return;
-    return loadSections();
-  }, [open, loadSections]);
-
-  if (!open) return null;
+export function OutlineSidebar({ totalPages, pdfOutline, onNavigate }: Props) {
+  const hasContents = !!(pdfOutline && pdfOutline.length > 0);
+  const [tab, setTab] = useState<"pages" | "contents">(hasContents ? "contents" : "pages");
 
   return (
-    <div data-testid="outline-sidebar" className="flex w-72 flex-col border-l bg-background">
-      <div className="flex items-center justify-between border-b p-4">
-        <h2 className="text-sm font-semibold">Outline</h2>
-      </div>
-      <div className="flex-1 overflow-auto p-4">
-        {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        {!loading && !error && sections.length === 0 && (
-          <p className="text-xs text-muted-foreground">No outline generated yet.</p>
+    <div data-testid="outline-sidebar" className="flex h-full flex-col">
+      <div role="tablist" className="flex border-b">
+        <button
+          role="tab"
+          aria-selected={tab === "pages"}
+          onClick={() => setTab("pages")}
+          className={`flex-1 p-2 text-xs ${tab === "pages" ? "font-semibold border-b-2 border-primary" : ""}`}
+        >
+          Pages
+        </button>
+        {hasContents && (
+          <button
+            role="tab"
+            aria-selected={tab === "contents"}
+            onClick={() => setTab("contents")}
+            className={`flex-1 p-2 text-xs ${tab === "contents" ? "font-semibold border-b-2 border-primary" : ""}`}
+          >
+            Contents
+          </button>
         )}
-        {!loading && !error && sections.length > 0 && (
-          <div className="space-y-4">
-            {sections.map((section, i) => (
-              <SectionPreview
-                key={section.id ?? i}
-                title={section.title ?? ""}
-                preview={section.content}
-              >
+      </div>
+      <div className="flex-1 overflow-auto p-2">
+        {tab === "pages" && (
+          <ul className="space-y-0.5">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <li key={p}>
                 <button
-                  className="w-full space-y-1 text-left"
-                  onClick={() => onNavigate?.(section.pageStart)}
+                  onClick={() => onNavigate(p)}
+                  className="w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
                 >
-                  <p className="text-xs font-medium leading-snug">{section.title ?? "Untitled"}</p>
-                  <p className="text-[10px] text-muted-foreground">Page {section.pageStart}</p>
-                  {section.content && (
-                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                      {section.content}
-                    </p>
-                  )}
+                  Page {p}
                 </button>
-              </SectionPreview>
+              </li>
             ))}
-          </div>
+          </ul>
+        )}
+        {tab === "contents" && hasContents && (
+          <OutlineTree items={pdfOutline!} onNavigate={onNavigate} />
         )}
       </div>
     </div>
+  );
+}
+
+function OutlineTree({
+  items,
+  onNavigate,
+  level = 0,
+}: {
+  items: PdfOutlineItem[];
+  onNavigate: (p: number) => void;
+  level?: number;
+}) {
+  return (
+    <ul className="space-y-0.5" style={{ paddingLeft: level * 8 }}>
+      {items.map((it, i) => (
+        <li key={i}>
+          <button
+            onClick={() => it.pageIndex != null && onNavigate(it.pageIndex + 1)}
+            className="w-full text-left text-xs hover:underline"
+          >
+            {it.title}
+          </button>
+          {it.items.length > 0 && (
+            <OutlineTree items={it.items} onNavigate={onNavigate} level={level + 1} />
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
