@@ -12,3 +12,4 @@ export * from "./agent-messages";
 export * from "./document-references";
 export * from "./library-references";
 export * from "./kept-citations";
+export * from "./document-reference-markers";

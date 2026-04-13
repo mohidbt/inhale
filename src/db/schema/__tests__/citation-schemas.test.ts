@@ -3,6 +3,7 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { documentReferences } from "../document-references";
 import { libraryReferences } from "../library-references";
 import { keptCitations } from "../kept-citations";
+import { documentReferenceMarkers } from "../document-reference-markers";
 
 describe("documentReferences schema", () => {
   const config = getTableConfig(documentReferences);
@@ -219,5 +220,67 @@ describe("keptCitations schema", () => {
     );
     expect(fk).toBeDefined();
     expect(fk?.reference().foreignColumns[0]?.name).toBe("id");
+  });
+});
+
+describe("documentReferenceMarkers schema", () => {
+  const config = getTableConfig(documentReferenceMarkers);
+
+  it("has correct table name", () => {
+    expect(config.name).toBe("document_reference_markers");
+  });
+
+  it("has all expected columns", () => {
+    const colNames = config.columns.map((c) => c.name);
+    expect(colNames).toContain("id");
+    expect(colNames).toContain("reference_id");
+    expect(colNames).toContain("page_number");
+    expect(colNames).toContain("x0");
+    expect(colNames).toContain("y0");
+    expect(colNames).toContain("x1");
+    expect(colNames).toContain("y1");
+    expect(colNames).toContain("created_at");
+  });
+
+  it("id is primary key", () => {
+    const idCol = config.columns.find((c) => c.name === "id");
+    expect(idCol?.primary).toBe(true);
+  });
+
+  it("reference_id is not null", () => {
+    const col = config.columns.find((c) => c.name === "reference_id");
+    expect(col?.notNull).toBe(true);
+  });
+
+  it("page_number is not null", () => {
+    const col = config.columns.find((c) => c.name === "page_number");
+    expect(col?.notNull).toBe(true);
+  });
+
+  it("coordinate columns are not null", () => {
+    for (const name of ["x0", "y0", "x1", "y1"]) {
+      const col = config.columns.find((c) => c.name === name);
+      expect(col?.notNull, `${name} should be not null`).toBe(true);
+    }
+  });
+
+  it("created_at is not null with default", () => {
+    const col = config.columns.find((c) => c.name === "created_at");
+    expect(col?.notNull).toBe(true);
+    expect(col?.hasDefault).toBe(true);
+  });
+
+  it("has index on reference_id", () => {
+    const idxNames = config.indexes.map((i) => i.config.name);
+    expect(idxNames).toContain("document_reference_markers_reference_id_idx");
+  });
+
+  it("reference_id has foreign key to document_references with cascade on delete", () => {
+    const fk = config.foreignKeys.find(
+      (fk) => fk.reference().columns[0]?.name === "reference_id"
+    );
+    expect(fk).toBeDefined();
+    expect(fk?.reference().foreignColumns[0]?.name).toBe("id");
+    expect(fk?.onDelete).toBe("cascade");
   });
 });

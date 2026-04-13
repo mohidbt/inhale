@@ -15,6 +15,13 @@
       "when": 1776017397883,
       "tag": "0001_aromatic_junta",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776086251531,
+      "tag": "0002_spicy_tattoo",
+      "breakpoints": true
     }
   ]
 }
