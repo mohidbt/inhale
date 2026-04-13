@@ -79,6 +79,21 @@ export function PdfViewer({ url, containerRef: externalRef, markers = [], userHi
     return () => ro.disconnect();
   }, [containerRef]);
 
+  // Trackpad pinch / ctrl+wheel zoom
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const { setZoom, zoom: cur } = useReaderState.getState();
+      const factor = Math.exp(-e.deltaY * 0.005);
+      setZoom(cur * factor);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [containerRef]);
+
   // Track scroll position for virtualization
   useEffect(() => {
     const el = containerRef.current;
