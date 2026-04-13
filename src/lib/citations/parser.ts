@@ -44,7 +44,7 @@ const BIB_HEADER_RE = /^(references|bibliography|works cited|literature cited)\s
 // A DOI like "10.1038/nature…" has a digit ('1') right after the dot, which
 // does not satisfy \s+, so it is never treated as an entry-start line and is
 // absorbed as continuation text instead. No negative lookahead is needed.
-const REF_ENTRY_START_RE = /^(?:\[(\d{1,3})\]\s+|(\d{1,3})\.\s+)/;
+export const REF_ENTRY_START_RE = /^(?:\[(\d{1,3})\]\s+|(\d{1,3})\.\s+)/;
 
 // Year: 4 digits in range 1900–2099. Uses `g` flag — consume only via matchAll (resets lastIndex).
 const YEAR_RE = /\b(1[9]\d{2}|20\d{2})\b/g;
@@ -136,7 +136,7 @@ function extractReferences(pages: ExtractedPage[]): ParsedReference[] {
 // Parse collected bibliography lines into ParsedReference[]
 // ---------------------------------------------------------------------------
 
-function parseBibLines(lines: string[]): ParsedReference[] {
+export function parseBibLines(lines: string[]): ParsedReference[] {
   // Group lines into reference entries. A new entry starts when a line matches
   // REF_ENTRY_START_RE. Continuation lines (indented or plain) are appended.
   const entries: { markerIndex: number; rawText: string }[] = [];
