@@ -109,5 +109,30 @@ export function useChat(documentId: number) {
     setConversationId(undefined);
   }, []);
 
-  return { messages, sources, streaming, error, sendMessage, clearMessages };
+  const loadConversation = useCallback(async (id: number) => {
+    try {
+      const res = await fetch(`/api/conversations/${id}/messages`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as {
+        messages: { role: "user" | "assistant"; content: string }[];
+      };
+      setMessages(data.messages.map((m) => ({ role: m.role, content: m.content })));
+      setSources([]);
+      setError(null);
+      setConversationId(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load conversation");
+    }
+  }, []);
+
+  return {
+    messages,
+    sources,
+    streaming,
+    error,
+    conversationId,
+    sendMessage,
+    clearMessages,
+    loadConversation,
+  };
 }
