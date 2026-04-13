@@ -9,10 +9,6 @@ interface ReaderToolbarProps {
   title: string;
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
-  commentSidebarOpen?: boolean;
-  onToggleCommentSidebar?: () => void;
-  onAddComment?: () => void;
-  showCommentInput?: boolean;
   chatOpen?: boolean;
   onToggleChat?: () => void;
   outlineOpen?: boolean;
@@ -25,10 +21,6 @@ export function ReaderToolbar({
   title,
   sidebarOpen,
   onToggleSidebar,
-  commentSidebarOpen,
-  onToggleCommentSidebar,
-  onAddComment,
-  showCommentInput,
   chatOpen,
   onToggleChat,
   outlineOpen,
@@ -85,24 +77,6 @@ export function ReaderToolbar({
         {onToggleSidebar && (
           <Button variant={sidebarOpen ? "secondary" : "ghost"} size="sm" onClick={onToggleSidebar}>
             Highlights
-          </Button>
-        )}
-        {onToggleCommentSidebar && (
-          <Button
-            variant={commentSidebarOpen ? "secondary" : "ghost"}
-            size="sm"
-            onClick={onToggleCommentSidebar}
-          >
-            Comments
-          </Button>
-        )}
-        {onAddComment && (
-          <Button
-            variant={showCommentInput ? "secondary" : "ghost"}
-            size="sm"
-            onClick={onAddComment}
-          >
-            Add Comment
           </Button>
         )}
         {onToggleChat && (

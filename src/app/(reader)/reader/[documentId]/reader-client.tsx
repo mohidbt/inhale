@@ -5,8 +5,6 @@ import dynamic from "next/dynamic";
 import { ReaderToolbar } from "@/components/reader/reader-toolbar";
 import { SelectionToolbar, type HighlightColor } from "@/components/reader/selection-toolbar";
 import { HighlightsSidebar } from "@/components/reader/highlights-sidebar";
-import { CommentThread } from "@/components/reader/comment-thread";
-import { CommentInput } from "@/components/reader/comment-input";
 import { ChatPanel } from "@/components/reader/chat-panel";
 import { OutlineSidebar, type PdfOutlineItem } from "@/components/reader/outline-sidebar";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
@@ -44,9 +42,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [commentRefreshKey, setCommentRefreshKey] = useState(0);
-  const [showCommentInput, setShowCommentInput] = useState(false);
-  const [commentSidebarOpen, setCommentSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [citationsOpen, setCitationsOpen] = useState(false);
@@ -285,10 +280,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         title={title}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((o) => !o)}
-        commentSidebarOpen={commentSidebarOpen}
-        onToggleCommentSidebar={() => setCommentSidebarOpen((o) => !o)}
-        onAddComment={() => setShowCommentInput((v) => !v)}
-        showCommentInput={showCommentInput}
         chatOpen={chatOpen}
         onToggleChat={() => setChatOpen((o) => !o)}
         outlineOpen={outlineOpen}
@@ -310,19 +301,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         onToggleCase={() => setMatchCase((v) => !v)}
         onClose={() => setFindOpen(false)}
       />
-      {showCommentInput && (
-        <div className="border-b bg-background">
-          <CommentInput
-            documentId={documentId}
-            pageNumber={currentPage}
-            onSaved={() => {
-              setCommentRefreshKey((k) => k + 1);
-              setShowCommentInput(false);
-            }}
-            onCancel={() => setShowCommentInput(false)}
-          />
-        </div>
-      )}
       <div className="relative flex flex-1 overflow-hidden">
         <PdfViewer
           url={url}
@@ -343,11 +321,6 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             />
           </DockableSidebar>
         )}
-        <CommentThread
-          documentId={documentId}
-          open={commentSidebarOpen}
-          refreshKey={commentRefreshKey}
-        />
         {chatOpen && (
           <DockableSidebar id="chat">
             <ChatPanel
