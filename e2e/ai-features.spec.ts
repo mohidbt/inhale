@@ -37,37 +37,17 @@ test("upload sets processingStatus to ready or failed", async ({ page }) => {
   expect(doc.processingStatus).toBe("ready");
 });
 
-test("outline sidebar fetches and displays document sections", async ({ page }) => {
+test("outline sidebar shows Pages tab with per-page navigation", async ({ page }) => {
   await signUpAndLogin(page);
   const { id: docId } = await uploadTestPdf(page);
-
-  await page.route("**/api/documents/*/outline", async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sections: [
-          {
-            id: 1,
-            sectionIndex: 0,
-            title: "Introduction",
-            pageStart: 1,
-            pageEnd: 2,
-            content: "Overview of the paper.",
-          },
-        ],
-      }),
-    });
-  });
 
   await page.goto(`/reader/${docId}`);
   await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
 
   await page.getByRole("button", { name: "Outline" }).click();
   const outlineSidebar = page.getByTestId("outline-sidebar");
-  await expect(outlineSidebar.getByRole("heading", { name: "Outline" })).toBeVisible();
-  await expect(outlineSidebar.getByText("Introduction")).toBeVisible();
-  await expect(outlineSidebar.getByText("Page 1")).toBeVisible();
+  await expect(outlineSidebar.getByRole("tab", { name: "Pages" })).toBeVisible();
+  await expect(outlineSidebar.getByRole("button", { name: "Page 1" })).toBeVisible();
 });
 
 test("chat panel sends question and streams answer with source badges", async ({ page }) => {

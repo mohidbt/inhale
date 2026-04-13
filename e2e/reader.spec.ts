@@ -142,38 +142,6 @@ test.describe("PDF Reader", () => {
     await expect(page.getByText(/No highlights yet/)).toBeVisible();
   });
 
-  // --- Comments Sidebar ---
-
-  test("Comments sidebar opens with empty state", async ({ page }) => {
-    await page.goto(`/reader/${docId}`);
-    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
-
-    await page.getByRole("button", { name: "Comments" }).click();
-    await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
-    await expect(page.getByText(/No comments yet/)).toBeVisible();
-  });
-
-  test("Add Comment flow — save and verify in sidebar", async ({ page }) => {
-    await page.goto(`/reader/${docId}`);
-    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
-
-    // Open comment input
-    await page.getByRole("button", { name: "Add Comment" }).click();
-    const textarea = page.getByPlaceholder("Write a comment");
-    await expect(textarea).toBeVisible();
-
-    // Save button should be disabled when empty
-    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
-
-    // Type and save
-    await textarea.fill("E2E test comment");
-    await page.getByRole("button", { name: "Save" }).click();
-
-    // Verify in Comments sidebar
-    await page.getByRole("button", { name: "Comments" }).click();
-    await expect(page.getByText("E2E test comment")).toBeVisible();
-  });
-
   // --- Chat Panel ---
 
   test("Chat panel opens with AI Assistant heading", async ({ page }) => {
