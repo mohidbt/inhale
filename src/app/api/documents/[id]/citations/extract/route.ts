@@ -43,7 +43,10 @@ export async function POST(
       const annResult = await extractAnnotationMarkers(doc.filePath);
       annRefs = annResult.references;
       annMarkers = annResult.markers;
-      usedAnnotations = annMarkers.length > 0;
+      // Require at least 3 resolved references to trust annotation extraction.
+      // A single spurious internal link on a bracket-style PDF must not suppress
+      // the text-regex fallback that would have found all [n] references.
+      usedAnnotations = annRefs.length >= 3;
     } catch (annErr) {
       console.warn(
         "[citations/extract] annotation extraction failed, falling back to text-regex",
