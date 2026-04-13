@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, serial, integer, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, serial, integer, pgEnum, index, uuid, jsonb } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 import { documents } from "./documents";
 
@@ -8,7 +8,10 @@ export const highlightColorEnum = pgEnum("highlight_color", [
   "blue",
   "pink",
   "orange",
+  "amber",
 ]);
+
+export const highlightSourceEnum = pgEnum("highlight_source", ["user", "ai-auto"]);
 
 export const userHighlights = pgTable("user_highlights", {
   id: serial("id").primaryKey(),
@@ -24,6 +27,10 @@ export const userHighlights = pgTable("user_highlights", {
   endOffset: integer("end_offset").notNull(),
   color: highlightColorEnum("color").notNull().default("yellow"),
   note: text("note"),
+  source: highlightSourceEnum("source").notNull().default("user"),
+  layerId: uuid("layer_id"),
+  comment: text("comment"),
+  rects: jsonb("rects"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
@@ -32,4 +39,5 @@ export const userHighlights = pgTable("user_highlights", {
 },
 (table) => [
   index("user_highlights_user_document_idx").on(table.userId, table.documentId),
+  index("user_highlights_layer_idx").on(table.layerId),
 ]);
