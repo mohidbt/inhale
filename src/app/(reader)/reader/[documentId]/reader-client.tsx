@@ -11,6 +11,7 @@ import { ChatPanel } from "@/components/reader/chat-panel";
 import { OutlineSidebar } from "@/components/reader/outline-sidebar";
 import { ConceptsPanel } from "@/components/reader/concepts-panel";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
+import { CitationsSidebar } from "@/components/reader/citations-sidebar";
 import { toast } from "sonner";
 import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
@@ -47,12 +48,14 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [chatOpen, setChatOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [conceptsOpen, setConceptsOpen] = useState(false);
+  const [citationsOpen, setCitationsOpen] = useState(false);
   const pdfScrollRef = useRef<HTMLDivElement>(null);
   const { selection, clearSelection } = useTextSelection();
   const currentPage = useReaderState((s) => s.currentPage);
 
   // Citations
   const [citations, setCitations] = useState<CitationWithStatus[]>([]);
+  const [citationsLoading, setCitationsLoading] = useState(true);
   const pendingCitationIds = useRef<Set<number>>(new Set());
   const { activeCitation, clickPosition, dismiss: dismissCitation } = useCitationClick(
     pdfScrollRef,
@@ -72,10 +75,12 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [markers, setMarkers] = useState<MarkerRect[]>([]);
 
   useEffect(() => {
+    setCitationsLoading(true);
     fetch(`/api/documents/${documentId}/citations`)
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: { citations: CitationWithStatus[] }) => setCitations(data.citations))
-      .catch(() => {/* non-fatal: citations just won't show */});
+      .catch(() => {/* non-fatal: citations just won't show */})
+      .finally(() => setCitationsLoading(false));
   }, [documentId]);
 
   useEffect(() => {
@@ -185,6 +190,8 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         onToggleOutline={() => setOutlineOpen((o) => !o)}
         conceptsOpen={conceptsOpen}
         onToggleConcepts={() => setConceptsOpen((o) => !o)}
+        citationsOpen={citationsOpen}
+        onToggleCitations={() => setCitationsOpen((o) => !o)}
       />
       {saveError && (
         <div className="bg-destructive/10 text-destructive px-4 py-2 text-sm">
@@ -225,6 +232,12 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         <ConceptsPanel
           selectedText={selection?.text ?? ""}
           open={conceptsOpen}
+        />
+        <CitationsSidebar
+          documentId={documentId}
+          open={citationsOpen}
+          citations={citations}
+          loading={citationsLoading}
         />
         {selection && (
           <SelectionToolbar
