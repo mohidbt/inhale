@@ -6,6 +6,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { PdfPage } from "./pdf-page";
 import { useReaderState } from "@/hooks/use-reader-state";
+import { usePdfTextSelection } from "@/hooks/use-pdf-text-selection";
 
 // Worker must be set in the same module as Document/Page usage (react-pdf requirement)
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -38,6 +39,7 @@ interface PdfViewerProps {
 }
 
 export function PdfViewer({ url, containerRef: externalRef, markers = [] }: PdfViewerProps) {
+  usePdfTextSelection();
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
   const [loadError, setLoadError] = useState<Error | null>(null);
