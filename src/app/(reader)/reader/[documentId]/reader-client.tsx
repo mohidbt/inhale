@@ -12,6 +12,7 @@ import { OutlineSidebar } from "@/components/reader/outline-sidebar";
 import { ConceptsPanel } from "@/components/reader/concepts-panel";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
 import { CitationsSidebar } from "@/components/reader/citations-sidebar";
+import { DockableSidebar } from "@/components/reader/dockable-sidebar";
 import { toast } from "sonner";
 import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
@@ -215,33 +216,49 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
       )}
       <div className="relative flex flex-1 overflow-hidden">
         <PdfViewer url={url} containerRef={pdfScrollRef} markers={markers} />
-        <HighlightsSidebar documentId={documentId} open={sidebarOpen} refreshKey={refreshKey} />
+        {sidebarOpen && (
+          <DockableSidebar id="highlights">
+            <HighlightsSidebar documentId={documentId} open={sidebarOpen} refreshKey={refreshKey} />
+          </DockableSidebar>
+        )}
         <CommentThread
           documentId={documentId}
           open={commentSidebarOpen}
           refreshKey={commentRefreshKey}
         />
-        <ChatPanel
-          documentId={documentId}
-          open={chatOpen}
-          scrollContainerRef={pdfScrollRef}
-        />
-        <OutlineSidebar
-          documentId={documentId}
-          open={outlineOpen}
-          onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
-        />
+        {chatOpen && (
+          <DockableSidebar id="chat">
+            <ChatPanel
+              documentId={documentId}
+              open={chatOpen}
+              scrollContainerRef={pdfScrollRef}
+            />
+          </DockableSidebar>
+        )}
+        {outlineOpen && (
+          <DockableSidebar id="outline" defaultDock="left">
+            <OutlineSidebar
+              documentId={documentId}
+              open={outlineOpen}
+              onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
+            />
+          </DockableSidebar>
+        )}
         <ConceptsPanel
           selectedText={selection?.text ?? ""}
           open={conceptsOpen}
         />
-        <CitationsSidebar
-          documentId={documentId}
-          open={citationsOpen}
-          citations={citations}
-          loading={citationsLoading}
-          onExtracted={() => setCitationsRefreshKey((k) => k + 1)}
-        />
+        {citationsOpen && (
+          <DockableSidebar id="citations">
+            <CitationsSidebar
+              documentId={documentId}
+              open={citationsOpen}
+              citations={citations}
+              loading={citationsLoading}
+              onExtracted={() => setCitationsRefreshKey((k) => k + 1)}
+            />
+          </DockableSidebar>
+        )}
         {selection && (
           <SelectionToolbar
             rect={selection.rect}

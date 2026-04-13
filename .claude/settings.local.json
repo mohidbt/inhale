@@ -115,7 +115,11 @@
       "Bash(mkdir -p \"/Users/mohidbutt/Documents/Claudius/inhale/.worktrees/smart-citations/src/app/api/documents/[id]/citations/[refId]/keep\")",
       "Bash(mkdir -p \"/Users/mohidbutt/Documents/Claudius/inhale/.worktrees/smart-citations/src/app/api/documents/[id]/citations/[refId]/save\")",
       "Bash(PORT=3001 rtk npm:*)",
-      "Bash(kill %1)"
+      "Bash(kill %1)",
+      "Bash(PGPASSWORD=inhale_dev rtk psql:*)",
+      "Skill(firecrawl:firecrawl)",
+      "Bash(./node_modules/.bin/vitest run:*)",
+      "Bash(kill 10676)"
     ]
   }
 }
