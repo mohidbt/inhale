@@ -1,16 +1,23 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useChat } from "@/hooks/use-chat";
+import { useChat, type ChatScope } from "@/hooks/use-chat";
 import { useViewportTracking } from "@/hooks/use-viewport-tracking";
 import { ChatMessage } from "./chat-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+export interface ChatSeed {
+  text: string;
+  pageNumber?: number;
+  scope?: ChatScope;
+  nonce: number;
+}
+
 interface ChatPanelProps {
   documentId: number;
   open: boolean;
   scrollContainerRef: React.RefObject<HTMLElement | null>;
-  seed?: { text: string; nonce: number } | null;
+  seed?: ChatSeed | null;
 }
 
 interface ConversationListItem {
@@ -25,6 +32,14 @@ export function ChatPanel({ documentId, open, scrollContainerRef, seed }: ChatPa
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  // Pending scope/selection from a seed (e.g. Ask AI on a highlight). The
+  // user may edit the input field but the scope still travels with the
+  // next send. Cleared after sending or after a fresh non-seeded turn.
+  const [pendingSeed, setPendingSeed] = useState<{
+    selectionText: string;
+    pageNumber?: number;
+    scope: ChatScope;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const viewportRef = useViewportTracking(scrollContainerRef);
@@ -43,6 +58,15 @@ export function ChatPanel({ documentId, open, scrollContainerRef, seed }: ChatPa
   useEffect(() => {
     if (!seed) return;
     setInput(seed.text);
+    if (seed.scope === "selection" || seed.scope === "page") {
+      setPendingSeed({
+        selectionText: seed.text,
+        pageNumber: seed.pageNumber,
+        scope: seed.scope,
+      });
+    } else {
+      setPendingSeed(null);
+    }
     inputRef.current?.focus();
   }, [seed]);
 
@@ -68,7 +92,19 @@ export function ChatPanel({ documentId, open, scrollContainerRef, seed }: ChatPa
     if (!input.trim() || streaming) return;
     const q = input;
     setInput("");
-    await sendMessage(q, viewportRef.current ?? { page: 1, scrollPct: 0 });
+    const sendOptions = pendingSeed
+      ? {
+          scope: pendingSeed.scope,
+          selectionText: pendingSeed.selectionText,
+          pageNumber: pendingSeed.pageNumber,
+        }
+      : undefined;
+    setPendingSeed(null);
+    await sendMessage(
+      q,
+      viewportRef.current ?? { page: 1, scrollPct: 0 },
+      sendOptions
+    );
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 

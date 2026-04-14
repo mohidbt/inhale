@@ -6,7 +6,7 @@ import { ReaderToolbar } from "@/components/reader/reader-toolbar";
 import { SelectionToolbar, type HighlightColor } from "@/components/reader/selection-toolbar";
 import { HighlightsSidebar } from "@/components/reader/highlights-sidebar";
 import { CommentsSidebar } from "@/components/reader/comments-sidebar";
-import { ChatPanel } from "@/components/reader/chat-panel";
+import { ChatPanel, type ChatSeed } from "@/components/reader/chat-panel";
 import { OutlineSidebar, type PdfOutlineItem } from "@/components/reader/outline-sidebar";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
 import { CitationsSidebar } from "@/components/reader/citations-sidebar";
@@ -64,7 +64,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [findOpen, setFindOpen] = useState(false);
   const [matchCase, setMatchCase] = useState(false);
   const find = usePdfFind(pdfDoc);
-  const [chatSeed, setChatSeed] = useState<{ text: string; nonce: number } | null>(null);
+  const [chatSeed, setChatSeed] = useState<ChatSeed | null>(null);
 
   // Citations
   const [citations, setCitations] = useState<CitationWithStatus[]>([]);
@@ -236,7 +236,12 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const handleAskAi = useCallback(() => {
     const sel = activeSelection ?? selection;
     if (!sel) return;
-    setChatSeed({ text: sel.text, nonce: Date.now() });
+    setChatSeed({
+      text: sel.text,
+      pageNumber: sel.pageNumber,
+      scope: "selection",
+      nonce: Date.now(),
+    });
     setChatOpen(true);
     setActiveSelection(null);
     clearSelection();
@@ -360,8 +365,13 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
               highlights={sidebarHighlights}
               loading={highlightsLoading}
               error={highlightsError}
-              onAskAi={(text) => {
-                setChatSeed({ text, nonce: Date.now() });
+              onAskAi={(text, pageNumber) => {
+                setChatSeed({
+                  text,
+                  pageNumber,
+                  scope: "selection",
+                  nonce: Date.now(),
+                });
                 setChatOpen(true);
               }}
             />
@@ -406,8 +416,13 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
               loading={highlightsLoading}
               error={highlightsError}
               onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
-              onAskAi={(text) => {
-                setChatSeed({ text, nonce: Date.now() });
+              onAskAi={(text, pageNumber) => {
+                setChatSeed({
+                  text,
+                  pageNumber,
+                  scope: "selection",
+                  nonce: Date.now(),
+                });
                 setChatOpen(true);
               }}
             />

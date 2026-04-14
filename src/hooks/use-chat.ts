@@ -12,6 +12,14 @@ export interface ChatSource {
   relevance: number;
 }
 
+export type ChatScope = "page" | "selection" | "paper";
+
+export interface ChatSendOptions {
+  scope?: ChatScope;
+  selectionText?: string;
+  pageNumber?: number;
+}
+
 export function useChat(documentId: number) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sources, setSources] = useState<ChatSource[]>([]);
@@ -20,7 +28,11 @@ export function useChat(documentId: number) {
   const [conversationId, setConversationId] = useState<number | undefined>();
 
   const sendMessage = useCallback(
-    async (question: string, viewportContext: ViewportContext) => {
+    async (
+      question: string,
+      viewportContext: ViewportContext,
+      options?: ChatSendOptions
+    ) => {
       if (!question.trim() || streaming) return;
 
       setMessages((prev) => [...prev, { role: "user", content: question }]);
@@ -38,6 +50,9 @@ export function useChat(documentId: number) {
             viewportContext,
             history: messages.slice(-10),
             conversationId,
+            scope: options?.scope ?? "paper",
+            selectionText: options?.selectionText,
+            pageNumber: options?.pageNumber ?? viewportContext?.page,
           }),
         });
 

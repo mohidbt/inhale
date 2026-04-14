@@ -26,7 +26,7 @@ interface HighlightsSidebarProps {
   highlights: Highlight[];
   loading: boolean;
   error: string | null;
-  onAskAi?: (text: string) => void;
+  onAskAi?: (text: string, pageNumber: number) => void;
 }
 
 export function HighlightsSidebar({
@@ -71,7 +71,7 @@ export function HighlightsSidebar({
                       variant="ghost"
                       size="sm"
                       className="h-5 px-2 text-[10px]"
-                      onClick={() => onAskAi(h.textContent)}
+                      onClick={() => onAskAi(h.textContent, h.pageNumber)}
                     >
                       Ask AI
                     </Button>

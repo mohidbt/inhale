@@ -28,7 +28,7 @@ interface CommentsSidebarProps {
   loading: boolean;
   error: string | null;
   onNavigate: (pageNumber: number) => void;
-  onAskAi?: (text: string) => void;
+  onAskAi?: (text: string, pageNumber: number) => void;
 }
 
 export function CommentsSidebar({
@@ -89,7 +89,7 @@ export function CommentsSidebar({
                       className="h-5 px-2 text-[10px]"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onAskAi(h.textContent);
+                        onAskAi(h.textContent, h.pageNumber);
                       }}
                     >
                       Ask AI

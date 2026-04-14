@@ -7,11 +7,37 @@ import { OpenRouter } from "@openrouter/sdk";
 import { getDecryptedApiKey, MODELS } from "@/lib/ai/openrouter";
 import { embedQuery } from "@/lib/ai/embeddings";
 
+type ChatScope = "page" | "selection" | "paper";
+
 interface ChatBody {
   question: string;
   conversationId?: number;
   viewportContext?: { page?: number; scrollPct?: number };
   history?: { role: "user" | "assistant"; content: string }[];
+  scope?: ChatScope;
+  selectionText?: string;
+  pageNumber?: number;
+}
+
+interface ChunkRow {
+  id: number;
+  content: string;
+  page_start: number;
+  page_end: number;
+  score: number;
+}
+
+const MAX_PAGE_TEXT_CHARS = 12_000;
+const MAX_ANCHOR_CHARS = 4_000;
+
+/**
+ * Redact long fields for production logging — keeps shape inspectable but
+ * avoids dumping full document text into shared log sinks.
+ */
+function redact(value: string, max = 240): string {
+  if (process.env.NODE_ENV !== "production") return value;
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}…[+${value.length - max} chars]`;
 }
 
 export async function POST(
@@ -34,6 +60,11 @@ export async function POST(
   const body = (await request.json()) as ChatBody;
   if (!body.question?.trim()) return new Response("Bad Request", { status: 400 });
 
+  const scope: ChatScope = body.scope ?? "paper";
+  const focusPage =
+    body.pageNumber ?? body.viewportContext?.page ?? null;
+  const selectionText = body.selectionText?.trim() ?? null;
+
   // Fetch key once — reused for both embeddings and LLM client
   let apiKey: string;
   try {
@@ -50,32 +81,116 @@ export async function POST(
     return new Response("Invalid embedding response", { status: 502 });
   }
 
-  // pgvector top-K with optional viewport bias
-  const currentPage = body.viewportContext?.page ?? null;
-  const rawRows = await db.execute(sql`
-    SELECT id, content, page_start, page_end,
-      (1 - (embedding <=> ${sql.raw(`'[${queryVec.join(",")}]'`)}::vector))
-        + CASE
-            WHEN ${currentPage}::int IS NOT NULL
-             AND page_start <= ${currentPage}::int + 1
-             AND page_end   >= ${currentPage}::int - 1
-            THEN 0.05
-            ELSE 0
-          END AS score
-    FROM document_chunks
-    WHERE document_id = ${documentId}
-      AND embedding IS NOT NULL
-    ORDER BY score DESC
-    LIMIT 6
-  `);
+  const vecLiteral = sql.raw(`'[${queryVec.join(",")}]'`);
 
-  // Drizzle execute returns rows differently depending on driver — handle both
-  const rows = (Array.isArray(rawRows) ? rawRows : (rawRows as { rows: unknown[] }).rows ?? []) as {
-    id: number; content: string; page_start: number; page_end: number; score: number;
-  }[];
+  let supportingChunks: ChunkRow[] = [];
+  let pageText: string | null = null;
+  let anchorText: string | null = null;
 
-  const contextText = rows.map((r) => `[Page ${r.page_start}]\n${r.content}`).join("\n\n---\n\n");
-  const sources = rows.map((r) => ({ page: r.page_start, relevance: Number(r.score) }));
+  if (scope === "selection" || scope === "page") {
+    // Pull every chunk on the focus page, joined in order, to form the
+    // "current page" injection.
+    if (focusPage != null) {
+      const pageRowsRaw = await db.execute(sql`
+        SELECT content, page_start, page_end, chunk_index
+        FROM document_chunks
+        WHERE document_id = ${documentId}
+          AND page_start <= ${focusPage}::int
+          AND page_end   >= ${focusPage}::int
+        ORDER BY chunk_index ASC
+      `);
+      const pageRows = (Array.isArray(pageRowsRaw)
+        ? pageRowsRaw
+        : (pageRowsRaw as { rows: unknown[] }).rows ?? []) as {
+        content: string;
+      }[];
+      const joined = pageRows.map((r) => r.content).join("\n\n");
+      pageText =
+        joined.length > MAX_PAGE_TEXT_CHARS
+          ? `${joined.slice(0, MAX_PAGE_TEXT_CHARS)}\n…[truncated]`
+          : joined;
+    }
+
+    // Plus top-4 supporting chunks across the whole doc.
+    const supportingRaw = await db.execute(sql`
+      SELECT id, content, page_start, page_end,
+        (1 - (embedding <=> ${vecLiteral}::vector)) AS score
+      FROM document_chunks
+      WHERE document_id = ${documentId}
+        AND embedding IS NOT NULL
+      ORDER BY score DESC
+      LIMIT 4
+    `);
+    supportingChunks = (Array.isArray(supportingRaw)
+      ? supportingRaw
+      : (supportingRaw as { rows: unknown[] }).rows ?? []) as ChunkRow[];
+  } else {
+    // scope === "paper": diverse retrieval across the doc, plus an
+    // abstract/first-page anchor so the model never thinks it's locked
+    // to a single page.
+    const diverseRaw = await db.execute(sql`
+      SELECT DISTINCT ON (page_start) id, content, page_start, page_end,
+        (1 - (embedding <=> ${vecLiteral}::vector)) AS score
+      FROM document_chunks
+      WHERE document_id = ${documentId}
+        AND embedding IS NOT NULL
+      ORDER BY page_start ASC, score DESC
+      LIMIT 8
+    `);
+    const diverse = (Array.isArray(diverseRaw)
+      ? diverseRaw
+      : (diverseRaw as { rows: unknown[] }).rows ?? []) as ChunkRow[];
+    // Re-sort by relevance for prompt order (DISTINCT ON forces page sort).
+    supportingChunks = diverse.sort((a, b) => Number(b.score) - Number(a.score));
+
+    const anchorRaw = await db.execute(sql`
+      SELECT content
+      FROM document_chunks
+      WHERE document_id = ${documentId}
+        AND page_start = 1
+      ORDER BY chunk_index ASC
+      LIMIT 3
+    `);
+    const anchorRows = (Array.isArray(anchorRaw)
+      ? anchorRaw
+      : (anchorRaw as { rows: unknown[] }).rows ?? []) as { content: string }[];
+    const joinedAnchor = anchorRows.map((r) => r.content).join("\n\n");
+    anchorText =
+      joinedAnchor.length > MAX_ANCHOR_CHARS
+        ? `${joinedAnchor.slice(0, MAX_ANCHOR_CHARS)}\n…[truncated]`
+        : joinedAnchor || null;
+  }
+
+  const supportingText = supportingChunks
+    .map((r) => `[Page ${r.page_start}]\n${r.content}`)
+    .join("\n\n---\n\n");
+
+  // Sources list (drives the badge UI). Always include focus page first.
+  const sourcesMap = new Map<number, number>();
+  if (focusPage != null && (scope === "selection" || scope === "page")) {
+    sourcesMap.set(focusPage, 1);
+  }
+  for (const r of supportingChunks) {
+    if (!sourcesMap.has(r.page_start)) {
+      sourcesMap.set(r.page_start, Number(r.score));
+    }
+  }
+  const sources = Array.from(sourcesMap.entries()).map(([page, relevance]) => ({
+    page,
+    relevance,
+  }));
+
+  // Diagnostic log — redacted in prod. Helps trace future "I only have page 1"
+  // style regressions without leaking the doc.
+  console.log("[chat/route] retrieval", {
+    documentId,
+    scope,
+    focusPage,
+    question: redact(body.question),
+    pageTextChars: pageText?.length ?? 0,
+    anchorChars: anchorText?.length ?? 0,
+    supportingPages: supportingChunks.map((r) => r.page_start),
+  });
 
   // Upsert conversation
   let conversationId = body.conversationId;
@@ -94,15 +209,37 @@ export async function POST(
     viewportContext: body.viewportContext ?? null,
   });
 
+  // Assemble system prompt. Separate "primary focus" from "supporting
+  // context", and explicitly tell the model not to refuse when the
+  // material is partial.
+  const promptSections: string[] = [
+    "You are a research assistant answering questions about a single PDF.",
+    "Cite page numbers inline as (p. N) whenever you draw on the material.",
+    "Prefer the provided material; if it is insufficient, say what specifically is missing rather than refusing outright.",
+    "Do not claim you only have access to a single page unless the user explicitly scoped the question to one page.",
+  ];
+
+  if (scope === "selection" && selectionText) {
+    promptSections.push(
+      `\n--- User selection (page ${focusPage ?? "?"}) ---\n${selectionText}`
+    );
+  }
+  if ((scope === "selection" || scope === "page") && pageText) {
+    promptSections.push(
+      `\n--- Current page (page ${focusPage}) ---\n${pageText}`
+    );
+  }
+  if (scope === "paper" && anchorText) {
+    promptSections.push(`\n--- Paper opening (page 1) ---\n${anchorText}`);
+  }
+  if (supportingText) {
+    promptSections.push(
+      `\n--- Supporting context (retrieved across the document) ---\n${supportingText}`
+    );
+  }
+
   const inputMessages = [
-    {
-      role: "system" as const,
-      content:
-        "You are a research assistant answering questions about a single PDF. " +
-        "Use ONLY the provided context. Cite page numbers inline as (p. N). " +
-        (currentPage ? `The user is currently viewing page ${currentPage}. ` : "") +
-        "If the answer is not in the context, say so.\n\nContext:\n" + contextText,
-    },
+    { role: "system" as const, content: promptSections.join("\n") },
     ...(body.history ?? []).slice(-10),
     { role: "user" as const, content: body.question },
   ];
