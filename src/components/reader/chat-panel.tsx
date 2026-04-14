@@ -5,6 +5,7 @@ import { useViewportTracking } from "@/hooks/use-viewport-tracking";
 import { ChatMessage } from "./chat-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 export interface ChatSeed {
   text: string;
@@ -19,6 +20,8 @@ interface ChatPanelProps {
   scrollContainerRef: React.RefObject<HTMLElement | null>;
   seed?: ChatSeed | null;
   dockControl?: ReactNode;
+  currentPage?: number;
+  currentSelection?: { text: string; pageNumber: number } | null;
 }
 
 interface ConversationListItem {
@@ -28,11 +31,20 @@ interface ConversationListItem {
   updatedAt: string;
 }
 
-export function ChatPanel({ documentId, open, scrollContainerRef, seed, dockControl }: ChatPanelProps) {
+export function ChatPanel({
+  documentId,
+  open,
+  scrollContainerRef,
+  seed,
+  dockControl,
+  currentPage,
+  currentSelection,
+}: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [scope, setScope] = useState<ChatScope>("paper");
   // Pending scope/selection from a seed (e.g. Ask AI on a highlight). The
   // user may edit the input field but the scope still travels with the
   // next send. Cleared after sending or after a fresh non-seeded turn.
@@ -68,6 +80,7 @@ export function ChatPanel({ documentId, open, scrollContainerRef, seed, dockCont
     } else {
       setPendingSeed(null);
     }
+    if (seed.scope) setScope(seed.scope);
     inputRef.current?.focus();
   }, [seed]);
 
@@ -88,22 +101,43 @@ export function ChatPanel({ documentId, open, scrollContainerRef, seed, dockCont
     if (historyOpen) fetchConversations();
   }, [historyOpen, fetchConversations, conversationId]);
 
+  const selectionAvailable = !!currentSelection;
+  // Effective scope: if user picked "selection" but none is available,
+  // the send button will be disabled — we still keep scope state as-is.
+  const effectiveScope: ChatScope = scope;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || streaming) return;
+    // Block send when scope=selection but nothing selected.
+    if (effectiveScope === "selection" && !currentSelection) return;
     const q = input;
     setInput("");
-    const sendOptions = pendingSeed
-      ? {
-          scope: pendingSeed.scope,
-          selectionText: pendingSeed.selectionText,
-          pageNumber: pendingSeed.pageNumber,
-        }
-      : undefined;
+    let sendOptions: { scope: ChatScope; selectionText?: string; pageNumber?: number } | undefined;
+    if (pendingSeed) {
+      sendOptions = {
+        scope: pendingSeed.scope,
+        selectionText: pendingSeed.selectionText,
+        pageNumber: pendingSeed.pageNumber,
+      };
+    } else if (effectiveScope === "selection" && currentSelection) {
+      sendOptions = {
+        scope: "selection",
+        selectionText: currentSelection.text,
+        pageNumber: currentSelection.pageNumber,
+      };
+    } else if (effectiveScope === "page") {
+      sendOptions = {
+        scope: "page",
+        pageNumber: currentPage,
+      };
+    } else {
+      sendOptions = { scope: "paper" };
+    }
     setPendingSeed(null);
     await sendMessage(
       q,
-      viewportRef.current ?? { page: 1, scrollPct: 0 },
+      viewportRef.current ?? { page: currentPage ?? 1, scrollPct: 0 },
       sendOptions
     );
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -205,7 +239,40 @@ export function ChatPanel({ documentId, open, scrollContainerRef, seed, dockCont
         </div>
       )}
       {error && <p className="px-3 py-1 text-xs text-red-500">{error}</p>}
-      <form onSubmit={handleSubmit} className="p-3 border-t flex gap-2">
+      <div className="border-t px-3 pt-2 flex items-center gap-1">
+        {(["paper", "page", "selection"] as const).map((s) => {
+          const disabled = s === "selection" && !selectionAvailable;
+          const active = s === scope && !disabled;
+          const label =
+            s === "paper"
+              ? "Paper"
+              : s === "page"
+              ? currentPage != null
+                ? `Page ${currentPage}`
+                : "Page"
+              : "Selection";
+          return (
+            <button
+              key={s}
+              type="button"
+              disabled={disabled}
+              onClick={() => setScope(s)}
+              className={cn(
+                "rounded border px-2 py-0.5 text-[10px] transition-colors",
+                active
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground hover:bg-muted",
+                disabled && "opacity-50 cursor-not-allowed hover:bg-background"
+              )}
+              aria-pressed={active}
+              aria-label={`Scope: ${label}`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <form onSubmit={handleSubmit} className="p-3 flex gap-2">
         <Input
           ref={inputRef}
           value={input}
@@ -214,7 +281,15 @@ export function ChatPanel({ documentId, open, scrollContainerRef, seed, dockCont
           disabled={streaming}
           className="text-sm"
         />
-        <Button type="submit" size="sm" disabled={streaming || !input.trim()}>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={
+            streaming ||
+            !input.trim() ||
+            (effectiveScope === "selection" && !currentSelection)
+          }
+        >
           {streaming ? "..." : "Send"}
         </Button>
       </form>

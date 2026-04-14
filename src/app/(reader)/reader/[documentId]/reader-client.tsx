@@ -557,6 +557,15 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
                   scrollContainerRef={pdfScrollRef}
                   seed={chatSeed}
                   dockControl={<DockMenu dock={chatDock} onChange={setChatDock} />}
+                  currentPage={currentPage}
+                  currentSelection={
+                    (activeSelection ?? selection)
+                      ? {
+                          text: (activeSelection ?? selection)!.text,
+                          pageNumber: (activeSelection ?? selection)!.pageNumber,
+                        }
+                      : null
+                  }
                 />
               ),
             });
