@@ -72,28 +72,28 @@ test("chat history drawer lists conversations and loads messages", async ({ page
 });
 
 test("New conversation resets the thread", async ({ page }) => {
+  // Per §0 of phase 2.0.2 fixes: do NOT mock /chat. Hit the real
+  // endpoint with INHALE_STUB_EMBEDDINGS=1 (set in playwright.config.ts).
+  test.setTimeout(120_000);
   await signUpAndLogin(page);
   const { id: docId } = await uploadTestPdf(page);
-
-  await page.route("**/api/documents/*/chat", async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { "Content-Type": "text/event-stream" },
-      body:
-        'data: {"type":"sources","sources":[{"page":1}],"conversationId":1}\n\n' +
-        'data: {"type":"token","content":"Hello."}\n\ndata: [DONE]\n\n',
-    });
-  });
 
   await page.goto(`/reader/${docId}`);
   await expect(page.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
 
   await page.getByRole("button", { name: "Chat" }).click();
-  await page.getByPlaceholder("Ask about this paper...").fill("Hi");
+  const chatInput = page.getByPlaceholder("Ask about this paper...");
+  await expect(chatInput).toBeVisible();
+  await chatInput.fill("Hi");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByText("Hello.")).toBeVisible({ timeout: 8_000 });
+
+  // Wait for the user message to render in the thread (DOM outcome —
+  // confirms the request was issued and the thread is non-empty).
+  await expect(page.getByText("Hi", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 
   await page.getByRole("button", { name: "New conversation" }).click();
-  await expect(page.getByText("Hello.")).toBeHidden();
+
+  // The outgoing user turn is gone and the empty-state copy returns.
   await expect(page.getByText("Ask a question about this paper")).toBeVisible();
+  await expect(page.getByText("Hi", { exact: true })).toHaveCount(0);
 });
