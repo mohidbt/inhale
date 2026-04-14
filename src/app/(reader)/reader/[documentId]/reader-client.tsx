@@ -63,8 +63,10 @@ function SidebarPanelFragment({
   withBorderLeft?: boolean;
   withBorderRight?: boolean;
 }) {
-  const minSize = side === "bottom" ? 120 : 280;
-  const defaultSize = side === "bottom" ? 30 : 320;
+  // `react-resizable-panels` v4: numbers = pixels, strings = percentages
+  // (or explicit "Npx"). We want a hard pixel floor but a relative default.
+  const minSize = side === "bottom" ? "120px" : "280px";
+  const defaultSize = side === "bottom" ? "30%" : "25%";
   // Separator goes on the side facing the PDF: right of a left-docked
   // sidebar, left of a right-docked sidebar, between stacked panels.
   const sepClass =
@@ -565,8 +567,8 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
               ))}
               <Panel
                 id="pdf-viewer"
-                minSize={200}
-                defaultSize={70}
+                minSize="30%"
+                defaultSize="70%"
                 data-testid="pdf-viewer-panel"
                 className="relative flex h-full overflow-hidden"
               >
@@ -603,7 +605,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
               id="reader-vertical"
               className="flex h-full w-full"
             >
-              <Panel id="reader-main-row" minSize={200} defaultSize={70}>
+              <Panel id="reader-main-row" minSize="40%" defaultSize="70%">
                 {horizontalRow}
               </Panel>
               <Separator
@@ -612,8 +614,8 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
               />
               <Panel
                 id="reader-bottom-dock"
-                minSize={120}
-                defaultSize={30}
+                minSize="120px"
+                defaultSize="30%"
                 className="flex w-full overflow-hidden border-t bg-background"
                 data-testid="bottom-dock-panel"
               >

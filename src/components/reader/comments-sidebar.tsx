@@ -75,11 +75,18 @@ export function CommentsSidebar({
         {!loading && !error && commented.length > 0 && (
           <div className="space-y-3">
             {commented.map((h) => (
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 key={h.id}
                 onClick={() => onNavigate(h.pageNumber)}
-                className={`block w-full text-left border-l-4 ${COLOR_MAP[h.color] ?? "border-l-gray-300"} py-1 pl-3 hover:bg-accent/40 rounded-r`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onNavigate(h.pageNumber);
+                  }
+                }}
+                className={`block w-full cursor-pointer text-left border-l-4 ${COLOR_MAP[h.color] ?? "border-l-gray-300"} py-1 pl-3 hover:bg-accent/40 rounded-r focus:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
               >
                 <p className="text-xs font-medium leading-relaxed">{h.comment}</p>
                 <p className="mt-1 line-clamp-2 text-[11px] italic text-muted-foreground">
@@ -101,7 +108,7 @@ export function CommentsSidebar({
                     </Button>
                   )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
