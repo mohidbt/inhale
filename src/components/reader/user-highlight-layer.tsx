@@ -27,6 +27,11 @@ interface Props {
 
 export function UserHighlightLayer({ highlights, pageNumber, naturalWidth, naturalHeight, displayWidth }: Props) {
   const scale = displayWidth / naturalWidth;
+  // The layer wrapper stays pointer-transparent so drags across empty space
+  // still drive text selection on the underlying text layer. Individual
+  // highlight rects opt back in so a click on a highlight can be detected
+  // via event delegation in the parent (reader-client listens on the scroll
+  // container for `[data-highlight-id]` clicks).
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }} aria-hidden="true">
       {highlights.flatMap((h) =>
@@ -43,6 +48,8 @@ export function UserHighlightLayer({ highlights, pageNumber, naturalWidth, natur
                 width:  (r.x1 - r.x0) * scale,
                 height: (r.y1 - r.y0) * scale,
                 background: COLOR_BG[h.color],
+                pointerEvents: "auto",
+                cursor: "pointer",
               }}
             />
           ))

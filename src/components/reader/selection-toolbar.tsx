@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+// Yellow is reserved for the comment overlay color so highlights and
+// comments stay visually distinct. Do not add "yellow" back here.
 const COLORS = [
-  { name: "yellow", class: "bg-yellow-300" },
   { name: "green", class: "bg-green-300" },
   { name: "blue", class: "bg-blue-300" },
   { name: "pink", class: "bg-pink-300" },
   { name: "orange", class: "bg-orange-300" },
+  { name: "purple", class: "bg-purple-300" },
 ] as const;
 
 export type HighlightColor = (typeof COLORS)[number]["name"];
@@ -25,9 +28,17 @@ interface SelectionToolbarProps {
    * this toolbar mounted even after the window selection clears.
    */
   onCommitStart?: () => void;
+  /**
+   * When set, the toolbar is operating on an existing highlight (click-to-edit
+   * mode) and renders an Erase button that calls `onErase`. In this mode the
+   * toolbar typically hides the Comment/Ask-AI actions since those flows
+   * require a fresh text selection.
+   */
+  editingHighlightId?: number;
+  onErase?: () => void;
 }
 
-export function SelectionToolbar({ rect, onHighlight, onDismiss, onComment, onAskAi, onCommitStart }: SelectionToolbarProps) {
+export function SelectionToolbar({ rect, onHighlight, onDismiss, onComment, onAskAi, onCommitStart, editingHighlightId, onErase }: SelectionToolbarProps) {
   const [mode, setMode] = useState<"main" | "comment">("main");
   const [commentText, setCommentText] = useState("");
 
@@ -105,7 +116,7 @@ export function SelectionToolbar({ rect, onHighlight, onDismiss, onComment, onAs
           title={c.name}
         />
       ))}
-      {onComment && (
+      {onComment && !editingHighlightId && (
         <Button
           variant="ghost"
           size="sm"
@@ -121,9 +132,21 @@ export function SelectionToolbar({ rect, onHighlight, onDismiss, onComment, onAs
           Comment
         </Button>
       )}
-      {onAskAi && (
+      {onAskAi && !editingHighlightId && (
         <Button variant="ghost" size="sm" onClick={onAskAi} className="text-xs">
           Ask AI
+        </Button>
+      )}
+      {onErase && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onErase}
+          aria-label="Erase highlight"
+          title="Erase highlight"
+          className="ml-1 text-xs text-destructive hover:text-destructive"
+        >
+          <Trash2 className="size-3.5" />
         </Button>
       )}
       <Button variant="ghost" size="sm" onClick={onDismiss} className="ml-1 text-xs">

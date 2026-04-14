@@ -136,6 +136,13 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   // snapshot until Save / Cancel / Escape clears it.
   type ActiveSelection = NonNullable<typeof selection>;
   const [activeSelection, setActiveSelection] = useState<ActiveSelection | null>(null);
+  // When the user clicks an existing highlight overlay, surface the
+  // selection toolbar in "edit existing highlight" mode so they can erase
+  // it. A synthetic rect is stored purely for toolbar positioning.
+  const [editingHighlight, setEditingHighlight] = useState<{
+    id: number;
+    rect: { top: number; left: number; width: number; height: number };
+  } | null>(null);
   const currentPage = useReaderState((s) => s.currentPage);
   const totalPages = useReaderState((s) => s.totalPages);
   const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[] | null>(null);
@@ -254,8 +261,11 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   // Toolbar reads from snapshot if present, else live selection.
   const toolbarSelection = activeSelection ?? selection;
 
+  // `color` is typically a user-selected HighlightColor, but the comment
+  // flow persists with "yellow" (reserved for comment overlays, not in the
+  // picker palette).
   const saveHighlight = useCallback(
-    async (color: HighlightColor): Promise<number | null> => {
+    async (color: HighlightColor | "yellow"): Promise<number | null> => {
       const sel = activeSelection ?? selection;
       if (!sel) return null;
       setSaveError(null);
@@ -339,6 +349,54 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
     if (selection) setActiveSelection(selection);
   }, [selection]);
 
+  const handleEraseHighlight = useCallback(async () => {
+    const id = editingHighlight?.id;
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/documents/${documentId}/highlights/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      setSaveError("Failed to erase highlight.");
+      return;
+    } finally {
+      setEditingHighlight(null);
+    }
+    setRefreshKey((k) => k + 1);
+  }, [documentId, editingHighlight]);
+
+  // Event delegation: catch clicks on UserHighlightLayer overlay rects and
+  // open the selection toolbar in "edit existing highlight" mode. Scoped to
+  // the PDF scroll container so it doesn't interfere with other UI.
+  useEffect(() => {
+    const el = pdfScrollRef.current;
+    if (!el) return;
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      const hEl = target?.closest<HTMLElement>("[data-highlight-id]");
+      if (!hEl) return;
+      const idAttr = hEl.getAttribute("data-highlight-id");
+      const id = idAttr ? parseInt(idAttr, 10) : NaN;
+      if (!Number.isFinite(id)) return;
+      e.stopPropagation();
+      const domRect = hEl.getBoundingClientRect();
+      setEditingHighlight({
+        id,
+        rect: {
+          top: domRect.top,
+          left: domRect.left,
+          width: domRect.width,
+          height: domRect.height,
+        },
+      });
+      // Clear any stray text selection so the new toolbar takes over.
+      setActiveSelection(null);
+    };
+    el.addEventListener("click", onClick);
+    return () => el.removeEventListener("click", onClick);
+  }, []);
+
   useEffect(() => {
     if (!saveError) return;
     const timer = setTimeout(() => setSaveError(null), 3000);
@@ -353,7 +411,9 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
       }
       if (e.key === "Escape") {
         // Escape dismisses any active selection toolbar (incl. comment popup)
+        // and exits "edit existing highlight" mode.
         setActiveSelection(null);
+        setEditingHighlight(null);
         clearSelection();
       }
     };
@@ -636,7 +696,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             </Group>
           );
         })()}
-        {toolbarSelection && (
+        {toolbarSelection && !editingHighlight && (
           <SelectionToolbar
             rect={toolbarSelection.rect}
             onHighlight={handleHighlight}
@@ -644,6 +704,19 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             onComment={handleComment}
             onAskAi={handleAskAi}
             onCommitStart={handleCommitStart}
+          />
+        )}
+        {editingHighlight && (
+          <SelectionToolbar
+            rect={editingHighlight.rect}
+            editingHighlightId={editingHighlight.id}
+            onHighlight={() => {
+              // TODO: recolor an existing highlight. For now, no-op to keep
+              // the picker visually consistent while erase is the primary
+              // action in edit mode.
+            }}
+            onDismiss={() => setEditingHighlight(null)}
+            onErase={handleEraseHighlight}
           />
         )}
         {activeCitation && clickPosition && (
