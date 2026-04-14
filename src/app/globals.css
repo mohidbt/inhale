@@ -129,3 +129,19 @@
   }
 }
 
+/* Cmd+F find-in-document highlights (see usePdfFind).
+   Specific selectors + !important to win against the browser UA `mark`
+   default (which is `background-color: yellow`) and any text-layer
+   inherited styling from react-pdf. */
+mark.find-match,
+.react-pdf__Page__textContent mark.find-match {
+  background-color: rgba(253, 224, 71, 0.6) !important;
+  color: inherit !important;
+  padding: 0 !important;
+  border-radius: 1px !important;
+}
+mark.find-match.find-match--current,
+.react-pdf__Page__textContent mark.find-match.find-match--current {
+  background-color: rgba(234, 179, 8, 0.9) !important;
+}
+
