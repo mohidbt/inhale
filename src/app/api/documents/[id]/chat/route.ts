@@ -64,6 +64,7 @@ export async function POST(
   const focusPage =
     body.pageNumber ?? body.viewportContext?.page ?? null;
   const selectionText = body.selectionText?.trim() ?? null;
+  const question = body.question.trim();
 
   // Fetch key once — reused for both embeddings and LLM client
   let apiKey: string;
@@ -74,8 +75,17 @@ export async function POST(
   }
   const client = new OpenRouter({ apiKey });
 
+  // For very short paper-scoped queries, expand lightly so the embedding has
+  // more semantic surface area. Cheap and only used for vector search — the
+  // LLM still sees the original question.
+  const wordCount = question.split(/\s+/).filter(Boolean).length;
+  const embeddingQuery =
+    scope === "paper" && wordCount > 0 && wordCount < 4
+      ? `${question} — find relevant passages in the paper`
+      : question;
+
   // Embed question (embedQuery takes apiKey, not userId)
-  const queryVec = await embedQuery(apiKey, body.question);
+  const queryVec = await embedQuery(apiKey, embeddingQuery);
 
   if (!queryVec.every((n) => Number.isFinite(n))) {
     return new Response("Invalid embedding response", { status: 502 });
@@ -125,23 +135,34 @@ export async function POST(
       ? supportingRaw
       : (supportingRaw as { rows: unknown[] }).rows ?? []) as ChunkRow[];
   } else {
-    // scope === "paper": diverse retrieval across the doc, plus an
-    // abstract/first-page anchor so the model never thinks it's locked
-    // to a single page.
-    const diverseRaw = await db.execute(sql`
-      SELECT DISTINCT ON (page_start) id, content, page_start, page_end,
+    // scope === "paper": fetch top-K by pure relevance, then dedupe by
+    // page in Node (keep highest-scoring chunk per page) and truncate to
+    // 8. Doing the dedupe in SQL via DISTINCT ON (page_start) ORDER BY
+    // page_start ASC forces page-number ordering and loses the most
+    // relevant chunks if they cluster on a few pages.
+    const topKRaw = await db.execute(sql`
+      SELECT id, content, page_start, page_end,
         (1 - (embedding <=> ${vecLiteral}::vector)) AS score
       FROM document_chunks
       WHERE document_id = ${documentId}
         AND embedding IS NOT NULL
-      ORDER BY page_start ASC, score DESC
-      LIMIT 8
+      ORDER BY score DESC
+      LIMIT 20
     `);
-    const diverse = (Array.isArray(diverseRaw)
-      ? diverseRaw
-      : (diverseRaw as { rows: unknown[] }).rows ?? []) as ChunkRow[];
-    // Re-sort by relevance for prompt order (DISTINCT ON forces page sort).
-    supportingChunks = diverse.sort((a, b) => Number(b.score) - Number(a.score));
+    const topK = (Array.isArray(topKRaw)
+      ? topKRaw
+      : (topKRaw as { rows: unknown[] }).rows ?? []) as ChunkRow[];
+
+    const bestPerPage = new Map<number, ChunkRow>();
+    for (const row of topK) {
+      const existing = bestPerPage.get(row.page_start);
+      if (!existing || Number(row.score) > Number(existing.score)) {
+        bestPerPage.set(row.page_start, row);
+      }
+    }
+    supportingChunks = Array.from(bestPerPage.values())
+      .sort((a, b) => Number(b.score) - Number(a.score))
+      .slice(0, 8);
 
     const anchorRaw = await db.execute(sql`
       SELECT content
@@ -182,6 +203,10 @@ export async function POST(
 
   // Diagnostic log — redacted in prod. Helps trace future "I only have page 1"
   // style regressions without leaking the doc.
+  const topSupporting = supportingChunks.slice(0, 3).map((r) => ({
+    page: r.page_start,
+    score: Number(Number(r.score).toFixed(4)),
+  }));
   console.log("[chat/route] retrieval", {
     documentId,
     scope,
@@ -189,8 +214,71 @@ export async function POST(
     question: redact(body.question),
     pageTextChars: pageText?.length ?? 0,
     anchorChars: anchorText?.length ?? 0,
+    supportingCount: supportingChunks.length,
     supportingPages: supportingChunks.map((r) => r.page_start),
+    topSupporting,
   });
+
+  // Empty-retrieval guard — if we have nothing to ground the answer in,
+  // surface a clear message instead of falling through to a generic LLM
+  // refusal. Covers "doc still processing / embeddings missing" case.
+  const hasAnyContext =
+    supportingChunks.length > 0 ||
+    (pageText?.length ?? 0) > 0 ||
+    (anchorText?.length ?? 0) > 0 ||
+    (selectionText?.length ?? 0) > 0;
+
+  if (!hasAnyContext) {
+    // Upsert conversation + user message so the empty-state turn is
+    // still persisted in history, consistent with the success path.
+    let emptyConvId = body.conversationId;
+    if (!emptyConvId) {
+      const [conv] = await db
+        .insert(agentConversations)
+        .values({ userId, documentId, title: body.question.slice(0, 80) })
+        .returning({ id: agentConversations.id });
+      emptyConvId = conv.id;
+    }
+    await db.insert(agentMessages).values({
+      conversationId: emptyConvId,
+      role: "user",
+      content: body.question,
+      viewportContext: body.viewportContext ?? null,
+    });
+
+    const emptyMessage =
+      "The assistant cannot find any content from this document. It may still be processing — try again in a minute, or re-upload.";
+
+    await db.insert(agentMessages).values({
+      conversationId: emptyConvId,
+      role: "assistant",
+      content: emptyMessage,
+    });
+    await db
+      .update(agentConversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(agentConversations.id, emptyConvId));
+
+    const emptyStream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        const send = (obj: unknown) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        send({ type: "sources", sources: [], conversationId: emptyConvId });
+        send({ type: "token", content: emptyMessage });
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+
+    return new Response(emptyStream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  }
 
   // Upsert conversation
   let conversationId = body.conversationId;
@@ -217,6 +305,7 @@ export async function POST(
     "Cite page numbers inline as (p. N) whenever you draw on the material.",
     "Prefer the provided material; if it is insufficient, say what specifically is missing rather than refusing outright.",
     "Do not claim you only have access to a single page unless the user explicitly scoped the question to one page.",
+    "If the provided material contains any relevant information, answer with citations; do not ask the user to narrow the question when content is available.",
   ];
 
   if (scope === "selection" && selectionText) {
