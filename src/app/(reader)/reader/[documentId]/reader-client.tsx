@@ -349,22 +349,36 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
     if (selection) setActiveSelection(selection);
   }, [selection]);
 
+  const deleteHighlight = useCallback(
+    async (id: number): Promise<boolean> => {
+      try {
+        const res = await fetch(`/api/documents/${documentId}/highlights/${id}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        setRefreshKey((k) => k + 1);
+        return true;
+      } catch {
+        setSaveError("Failed to delete.");
+        return false;
+      }
+    },
+    [documentId]
+  );
+
   const handleEraseHighlight = useCallback(async () => {
     const id = editingHighlight?.id;
     if (!id) return;
-    try {
-      const res = await fetch(`/api/documents/${documentId}/highlights/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch {
-      setSaveError("Failed to erase highlight.");
-      return;
-    } finally {
-      setEditingHighlight(null);
-    }
-    setRefreshKey((k) => k + 1);
-  }, [documentId, editingHighlight]);
+    await deleteHighlight(id);
+    setEditingHighlight(null);
+  }, [deleteHighlight, editingHighlight]);
+
+  const handleSidebarDelete = useCallback(
+    (id: number) => {
+      void deleteHighlight(id);
+    },
+    [deleteHighlight]
+  );
 
   // Event delegation: catch clicks on UserHighlightLayer overlay rects and
   // open the selection toolbar in "edit existing highlight" mode. Scoped to
@@ -527,6 +541,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
                     });
                     setChatOpen(true);
                   }}
+                  onDelete={handleSidebarDelete}
                 />
               ),
             });
@@ -598,6 +613,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
                     });
                     setChatOpen(true);
                   }}
+                  onDelete={handleSidebarDelete}
                 />
               ),
             });

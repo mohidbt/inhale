@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Highlight {
@@ -28,6 +29,7 @@ interface HighlightsSidebarProps {
   loading: boolean;
   error: string | null;
   onAskAi?: (text: string, pageNumber: number) => void;
+  onDelete?: (highlightId: number) => void;
   dockControl?: ReactNode;
 }
 
@@ -37,6 +39,7 @@ export function HighlightsSidebar({
   loading,
   error,
   onAskAi,
+  onDelete,
   dockControl,
 }: HighlightsSidebarProps) {
   if (!open) return null;
@@ -70,16 +73,32 @@ export function HighlightsSidebar({
                 )}
                 <div className="mt-1 flex items-center justify-between">
                   <p className="text-[10px] text-muted-foreground">Page {h.pageNumber}</p>
-                  {onAskAi && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-5 px-2 text-[10px]"
-                      onClick={() => onAskAi(h.textContent, h.pageNumber)}
-                    >
-                      Ask AI
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {onAskAi && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-2 text-[10px]"
+                        onClick={() => onAskAi(h.textContent, h.pageNumber)}
+                      >
+                        Ask AI
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-2 text-[10px] text-destructive hover:text-destructive"
+                        aria-label="Delete"
+                        onClick={() => {
+                          if (!window.confirm("Delete this highlight?")) return;
+                          onDelete(h.id);
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

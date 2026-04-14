@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, type ReactNode } from "react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Highlight {
@@ -29,6 +30,7 @@ interface CommentsSidebarProps {
   error: string | null;
   onNavigate: (pageNumber: number) => void;
   onAskAi?: (text: string, pageNumber: number) => void;
+  onDelete?: (highlightId: number) => void;
   dockControl?: ReactNode;
 }
 
@@ -39,6 +41,7 @@ export function CommentsSidebar({
   error,
   onNavigate,
   onAskAi,
+  onDelete,
   dockControl,
 }: CommentsSidebarProps) {
   const commented = useMemo(
@@ -94,19 +97,36 @@ export function CommentsSidebar({
                 </p>
                 <div className="mt-1 flex items-center justify-between">
                   <p className="text-[10px] text-muted-foreground">Page {h.pageNumber}</p>
-                  {onAskAi && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-5 px-2 text-[10px]"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAskAi(h.textContent, h.pageNumber);
-                      }}
-                    >
-                      Ask AI
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {onAskAi && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-2 text-[10px]"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAskAi(h.textContent, h.pageNumber);
+                        }}
+                      >
+                        Ask AI
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-2 text-[10px] text-destructive hover:text-destructive"
+                        aria-label="Delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!window.confirm("Delete this highlight?")) return;
+                          onDelete(h.id);
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
