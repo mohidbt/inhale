@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { PageThumbnail } from "./page-thumbnail";
 import { useComputedOutline } from "@/hooks/use-computed-outline";
 
@@ -15,9 +15,10 @@ interface Props {
   pdfOutline: PdfOutlineItem[] | null;
   pdfDoc?: unknown;
   onNavigate: (pageNumber: number) => void;
+  dockControl?: ReactNode;
 }
 
-export function OutlineSidebar({ totalPages, pdfOutline, pdfDoc, onNavigate }: Props) {
+export function OutlineSidebar({ totalPages, pdfOutline, pdfDoc, onNavigate, dockControl }: Props) {
   const hasNativeContents = !!(pdfOutline && pdfOutline.length > 0);
   const [tab, setTab] = useState<"pages" | "contents">(hasNativeContents ? "contents" : "pages");
 
@@ -35,7 +36,11 @@ export function OutlineSidebar({ totalPages, pdfOutline, pdfDoc, onNavigate }: P
       : null;
 
   return (
-    <div data-testid="outline-sidebar" className="flex h-full flex-col">
+    <div data-testid="outline-sidebar" className="flex h-full w-full flex-col bg-background">
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
+        <h2 className="truncate text-sm font-semibold">Outline</h2>
+        {dockControl}
+      </div>
       <div role="tablist" className="flex border-b">
         <button
           role="tab"

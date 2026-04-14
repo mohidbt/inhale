@@ -10,7 +10,8 @@ import { ChatPanel, type ChatSeed } from "@/components/reader/chat-panel";
 import { OutlineSidebar, type PdfOutlineItem } from "@/components/reader/outline-sidebar";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
 import { CitationsSidebar } from "@/components/reader/citations-sidebar";
-import { DockableSidebar } from "@/components/reader/dockable-sidebar";
+import { DockMenu, useSidebarDock, type Dock } from "@/components/reader/dockable-sidebar";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { FindBar } from "@/components/reader/find-bar";
 import { usePdfFind } from "@/hooks/use-pdf-find";
 import { toast } from "sonner";
@@ -39,6 +40,82 @@ interface ReaderClientProps {
   title: string;
 }
 
+/**
+ * Renders a Separator + Panel pair as a fragment so callers can place
+ * sidebar panels alongside the PDF panel inside a single Group. The
+ * separator is positioned on the side facing the PDF (right of left dock,
+ * left of right dock, top of bottom dock).
+ *
+ * minSize 280px enforces the "header stays on one line" rule.
+ */
+function SidebarPanelFragment({
+  panelId,
+  children,
+  side,
+  isFirst,
+  withBorderLeft,
+  withBorderRight,
+}: {
+  panelId: string;
+  children: React.ReactNode;
+  side: "left" | "right" | "bottom";
+  isFirst: boolean;
+  withBorderLeft?: boolean;
+  withBorderRight?: boolean;
+}) {
+  const minSize = side === "bottom" ? 120 : 280;
+  const defaultSize = side === "bottom" ? 30 : 320;
+  // Separator goes on the side facing the PDF: right of a left-docked
+  // sidebar, left of a right-docked sidebar, between stacked panels.
+  const sepClass =
+    side === "bottom"
+      ? "w-1 cursor-col-resize bg-border data-[hover]:bg-primary/40"
+      : "w-1 cursor-col-resize bg-border data-[hover]:bg-primary/40";
+  const panel = (
+    <Panel
+      id={panelId}
+      minSize={minSize}
+      defaultSize={defaultSize}
+      className={[
+        "flex h-full overflow-hidden bg-background",
+        withBorderLeft ? "border-l" : "",
+        withBorderRight ? "border-r" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-testid={`panel-${panelId}`}
+    >
+      {children}
+    </Panel>
+  );
+  if (side === "left") {
+    // Panel first, then separator (separator sits between sidebar and PDF).
+    return (
+      <>
+        {panel}
+        <Separator id={`sep-${panelId}`} className={sepClass} />
+      </>
+    );
+  }
+  if (side === "right") {
+    // Separator first (between PDF and sidebar), then panel.
+    return (
+      <>
+        <Separator id={`sep-${panelId}`} className={sepClass} />
+        {panel}
+      </>
+    );
+  }
+  // Bottom dock: stacked horizontally; separators between only.
+  if (isFirst) return panel;
+  return (
+    <>
+      <Separator id={`sep-${panelId}`} className={sepClass} />
+      {panel}
+    </>
+  );
+}
+
 export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const url = `/api/documents/${documentId}/file`;
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -65,6 +142,13 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [matchCase, setMatchCase] = useState(false);
   const find = usePdfFind(pdfDoc);
   const [chatSeed, setChatSeed] = useState<ChatSeed | null>(null);
+
+  // Per-sidebar dock position. Persisted via localStorage by useSidebarDock.
+  const [highlightsDock, setHighlightsDock] = useSidebarDock("highlights", "right");
+  const [chatDock, setChatDock] = useSidebarDock("chat", "right");
+  const [outlineDock, setOutlineDock] = useSidebarDock("outline", "left");
+  const [citationsDock, setCitationsDock] = useSidebarDock("citations", "right");
+  const [commentsDock, setCommentsDock] = useSidebarDock("comments", "right");
 
   // Citations
   const [citations, setCitations] = useState<CitationWithStatus[]>([]);
@@ -351,83 +435,205 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         onClose={() => setFindOpen(false)}
       />
       <div className="relative flex flex-1 overflow-hidden">
-        <PdfViewer
-          url={url}
-          containerRef={pdfScrollRef}
-          markers={markers}
-          userHighlights={userHighlights}
-          onPdfLoad={setPdfDoc}
-        />
-        {sidebarOpen && (
-          <DockableSidebar id="highlights">
-            <HighlightsSidebar
-              open={sidebarOpen}
-              highlights={sidebarHighlights}
-              loading={highlightsLoading}
-              error={highlightsError}
-              onAskAi={(text, pageNumber) => {
-                setChatSeed({
-                  text,
-                  pageNumber,
-                  scope: "selection",
-                  nonce: Date.now(),
-                });
-                setChatOpen(true);
-              }}
-            />
-          </DockableSidebar>
-        )}
-        {chatOpen && (
-          <DockableSidebar id="chat">
-            <ChatPanel
-              documentId={documentId}
-              open={chatOpen}
-              scrollContainerRef={pdfScrollRef}
-              seed={chatSeed}
-            />
-          </DockableSidebar>
-        )}
-        {outlineOpen && (
-          <DockableSidebar id="outline" defaultDock="left">
-            <OutlineSidebar
-              totalPages={totalPages}
-              pdfOutline={pdfOutline}
-              pdfDoc={pdfDoc}
-              onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
-            />
-          </DockableSidebar>
-        )}
-        {citationsOpen && (
-          <DockableSidebar id="citations">
-            <CitationsSidebar
-              documentId={documentId}
-              open={citationsOpen}
-              citations={citations}
-              loading={citationsLoading}
-              onExtracted={() => setCitationsRefreshKey((k) => k + 1)}
-            />
-          </DockableSidebar>
-        )}
-        {commentsOpen && (
-          <DockableSidebar id="comments">
-            <CommentsSidebar
-              open={commentsOpen}
-              highlights={sidebarHighlights}
-              loading={highlightsLoading}
-              error={highlightsError}
-              onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
-              onAskAi={(text, pageNumber) => {
-                setChatSeed({
-                  text,
-                  pageNumber,
-                  scope: "selection",
-                  nonce: Date.now(),
-                });
-                setChatOpen(true);
-              }}
-            />
-          </DockableSidebar>
-        )}
+        {(() => {
+          // Build a map of sidebar-id → rendered node + dock position.
+          // Each sidebar is rendered with its own DockMenu so the user can
+          // re-dock from inside the panel header (no abs-positioned ⋮).
+          type SidebarEntry = {
+            id: string;
+            dock: Dock;
+            node: React.ReactNode;
+          };
+          const entries: SidebarEntry[] = [];
+          if (sidebarOpen) {
+            entries.push({
+              id: "highlights",
+              dock: highlightsDock,
+              node: (
+                <HighlightsSidebar
+                  open={sidebarOpen}
+                  highlights={sidebarHighlights}
+                  loading={highlightsLoading}
+                  error={highlightsError}
+                  dockControl={<DockMenu dock={highlightsDock} onChange={setHighlightsDock} />}
+                  onAskAi={(text, pageNumber) => {
+                    setChatSeed({
+                      text,
+                      pageNumber,
+                      scope: "selection",
+                      nonce: Date.now(),
+                    });
+                    setChatOpen(true);
+                  }}
+                />
+              ),
+            });
+          }
+          if (chatOpen) {
+            entries.push({
+              id: "chat",
+              dock: chatDock,
+              node: (
+                <ChatPanel
+                  documentId={documentId}
+                  open={chatOpen}
+                  scrollContainerRef={pdfScrollRef}
+                  seed={chatSeed}
+                  dockControl={<DockMenu dock={chatDock} onChange={setChatDock} />}
+                />
+              ),
+            });
+          }
+          if (outlineOpen) {
+            entries.push({
+              id: "outline",
+              dock: outlineDock,
+              node: (
+                <OutlineSidebar
+                  totalPages={totalPages}
+                  pdfOutline={pdfOutline}
+                  pdfDoc={pdfDoc}
+                  onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
+                  dockControl={<DockMenu dock={outlineDock} onChange={setOutlineDock} />}
+                />
+              ),
+            });
+          }
+          if (citationsOpen) {
+            entries.push({
+              id: "citations",
+              dock: citationsDock,
+              node: (
+                <CitationsSidebar
+                  documentId={documentId}
+                  open={citationsOpen}
+                  citations={citations}
+                  loading={citationsLoading}
+                  onExtracted={() => setCitationsRefreshKey((k) => k + 1)}
+                  dockControl={<DockMenu dock={citationsDock} onChange={setCitationsDock} />}
+                />
+              ),
+            });
+          }
+          if (commentsOpen) {
+            entries.push({
+              id: "comments",
+              dock: commentsDock,
+              node: (
+                <CommentsSidebar
+                  open={commentsOpen}
+                  highlights={sidebarHighlights}
+                  loading={highlightsLoading}
+                  error={highlightsError}
+                  onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
+                  dockControl={<DockMenu dock={commentsDock} onChange={setCommentsDock} />}
+                  onAskAi={(text, pageNumber) => {
+                    setChatSeed({
+                      text,
+                      pageNumber,
+                      scope: "selection",
+                      nonce: Date.now(),
+                    });
+                    setChatOpen(true);
+                  }}
+                />
+              ),
+            });
+          }
+
+          const leftEntries = entries.filter((e) => e.dock === "left");
+          const rightEntries = entries.filter((e) => e.dock === "right");
+          const bottomEntries = entries.filter((e) => e.dock === "bottom");
+
+          // Horizontal row: [left sidebars] | PDF | [right sidebars]
+          const horizontalRow = (
+            <Group
+              orientation="horizontal"
+              id="reader-horizontal"
+              className="flex h-full w-full"
+            >
+              {leftEntries.map((e, i) => (
+                <SidebarPanelFragment
+                  key={e.id}
+                  panelId={`sidebar-${e.id}`}
+                  withBorderRight
+                  isFirst={i === 0}
+                  side="left"
+                >
+                  {e.node}
+                </SidebarPanelFragment>
+              ))}
+              <Panel
+                id="pdf-viewer"
+                minSize={200}
+                defaultSize={70}
+                data-testid="pdf-viewer-panel"
+                className="relative flex h-full overflow-hidden"
+              >
+                <PdfViewer
+                  url={url}
+                  containerRef={pdfScrollRef}
+                  markers={markers}
+                  userHighlights={userHighlights}
+                  onPdfLoad={setPdfDoc}
+                />
+              </Panel>
+              {rightEntries.map((e, i) => (
+                <SidebarPanelFragment
+                  key={e.id}
+                  panelId={`sidebar-${e.id}`}
+                  withBorderLeft
+                  isFirst={i === 0}
+                  side="right"
+                >
+                  {e.node}
+                </SidebarPanelFragment>
+              ))}
+            </Group>
+          );
+
+          if (bottomEntries.length === 0) {
+            return horizontalRow;
+          }
+
+          // Vertical wrap: horizontalRow on top, bottom-docked sidebars below.
+          return (
+            <Group
+              orientation="vertical"
+              id="reader-vertical"
+              className="flex h-full w-full"
+            >
+              <Panel id="reader-main-row" minSize={200} defaultSize={70}>
+                {horizontalRow}
+              </Panel>
+              <Separator
+                id="sep-bottom"
+                className="h-1 cursor-row-resize bg-border data-[hover]:bg-primary/40"
+              />
+              <Panel
+                id="reader-bottom-dock"
+                minSize={120}
+                defaultSize={30}
+                className="flex w-full overflow-hidden border-t bg-background"
+                data-testid="bottom-dock-panel"
+              >
+                <Group orientation="horizontal" id="reader-bottom-row" className="flex h-full w-full">
+                  {bottomEntries.map((e, i) => (
+                    <SidebarPanelFragment
+                      key={e.id}
+                      panelId={`sidebar-${e.id}`}
+                      withBorderLeft={i > 0}
+                      isFirst={i === 0}
+                      side="bottom"
+                    >
+                      {e.node}
+                    </SidebarPanelFragment>
+                  ))}
+                </Group>
+              </Panel>
+            </Group>
+          );
+        })()}
         {toolbarSelection && (
           <SelectionToolbar
             rect={toolbarSelection.rect}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
 interface Highlight {
@@ -29,6 +29,7 @@ interface CommentsSidebarProps {
   error: string | null;
   onNavigate: (pageNumber: number) => void;
   onAskAi?: (text: string, pageNumber: number) => void;
+  dockControl?: ReactNode;
 }
 
 export function CommentsSidebar({
@@ -38,6 +39,7 @@ export function CommentsSidebar({
   error,
   onNavigate,
   onAskAi,
+  dockControl,
 }: CommentsSidebarProps) {
   const commented = useMemo(
     () =>
@@ -55,9 +57,12 @@ export function CommentsSidebar({
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
-      <div className="flex items-center justify-between border-b p-4">
-        <h2 className="text-sm font-semibold">Comments</h2>
-        <span className="text-[10px] text-muted-foreground">{commented.length}</span>
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="truncate text-sm font-semibold">Comments</h2>
+          <span className="text-[10px] text-muted-foreground">{commented.length}</span>
+        </div>
+        {dockControl}
       </div>
       <div className="flex-1 overflow-auto p-4">
         {loading && <p className="text-xs text-muted-foreground">Loading...</p>}

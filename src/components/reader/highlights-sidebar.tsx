@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
 interface Highlight {
@@ -27,6 +28,7 @@ interface HighlightsSidebarProps {
   loading: boolean;
   error: string | null;
   onAskAi?: (text: string, pageNumber: number) => void;
+  dockControl?: ReactNode;
 }
 
 export function HighlightsSidebar({
@@ -35,13 +37,15 @@ export function HighlightsSidebar({
   loading,
   error,
   onAskAi,
+  dockControl,
 }: HighlightsSidebarProps) {
   if (!open) return null;
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
-      <div className="flex items-center justify-between border-b p-4">
-        <h2 className="text-sm font-semibold">Highlights</h2>
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+        <h2 className="truncate text-sm font-semibold">Highlights</h2>
+        {dockControl}
       </div>
       <div className="flex-1 overflow-auto p-4">
         {loading && <p className="text-xs text-muted-foreground">Loading...</p>}

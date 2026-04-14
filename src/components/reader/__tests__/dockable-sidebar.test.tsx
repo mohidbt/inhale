@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { DockableSidebar } from "../dockable-sidebar";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import { useSidebarDock, DockMenu, type Dock } from "../dockable-sidebar";
 
 function installMemoryStorage() {
   const store = new Map<string, string>();
@@ -15,24 +15,38 @@ function installMemoryStorage() {
   Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true, writable: true });
 }
 
-describe("DockableSidebar", () => {
+function Harness({ id, defaultDock = "right" as Dock }: { id: string; defaultDock?: Dock }) {
+  const [dock, setDock] = useSidebarDock(id, defaultDock);
+  return (
+    <div>
+      <span data-testid="dock-value">{dock}</span>
+      <DockMenu dock={dock} onChange={setDock} />
+    </div>
+  );
+}
+
+describe("useSidebarDock + DockMenu", () => {
   beforeEach(() => {
     installMemoryStorage();
   });
 
-  it("renders children and persists dock change to localStorage", () => {
-    render(<DockableSidebar id="test-sb" defaultDock="right"><div>content</div></DockableSidebar>);
-    expect(screen.getByText("content")).toBeTruthy();
-    const summary = screen.getByRole("button", { name: /dock/i }).closest("summary");
-    if (summary) fireEvent.click(summary);
-    fireEvent.click(screen.getByRole("menuitem", { name: /bottom/i }));
+  it("persists dock change to localStorage when a menu item is clicked", () => {
+    render(<Harness id="test-sb" />);
+    // Open the <details> menu by clicking the summary element.
+    const summary = screen.getByTestId("dock-menu-trigger");
+    act(() => {
+      fireEvent.click(summary);
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId("dock-menu-item-bottom"));
+    });
+    expect(screen.getByTestId("dock-value").textContent).toBe("bottom");
     expect(localStorage.getItem("dockable-sidebar:test-sb:dock")).toBe("bottom");
   });
 
   it("restores previously persisted dock from localStorage on mount", () => {
     localStorage.setItem("dockable-sidebar:restore:dock", "left");
-    render(<DockableSidebar id="restore"><div>x</div></DockableSidebar>);
-    const root = screen.getByText("x").closest(".relative");
-    expect(root?.className).toContain("border-r");
+    render(<Harness id="restore" />);
+    expect(screen.getByTestId("dock-value").textContent).toBe("left");
   });
 });

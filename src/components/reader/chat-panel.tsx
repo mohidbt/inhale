@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { useChat, type ChatScope } from "@/hooks/use-chat";
 import { useViewportTracking } from "@/hooks/use-viewport-tracking";
 import { ChatMessage } from "./chat-message";
@@ -18,6 +18,7 @@ interface ChatPanelProps {
   open: boolean;
   scrollContainerRef: React.RefObject<HTMLElement | null>;
   seed?: ChatSeed | null;
+  dockControl?: ReactNode;
 }
 
 interface ConversationListItem {
@@ -27,7 +28,7 @@ interface ConversationListItem {
   updatedAt: string;
 }
 
-export function ChatPanel({ documentId, open, scrollContainerRef, seed }: ChatPanelProps) {
+export function ChatPanel({ documentId, open, scrollContainerRef, seed, dockControl }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
@@ -121,9 +122,9 @@ export function ChatPanel({ documentId, open, scrollContainerRef, seed }: ChatPa
   if (!open) return null;
 
   return (
-    <div className="flex flex-col h-full w-80 border-l bg-background">
-      <div className="flex items-center justify-between border-b p-3">
-        <span className="text-sm font-medium">AI Assistant</span>
+    <div className="flex flex-col h-full w-full bg-background">
+      <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+        <span className="truncate text-sm font-medium">AI Assistant</span>
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
@@ -143,6 +144,7 @@ export function ChatPanel({ documentId, open, scrollContainerRef, seed }: ChatPa
           >
             History
           </Button>
+          {dockControl}
         </div>
       </div>
       {historyOpen && (
