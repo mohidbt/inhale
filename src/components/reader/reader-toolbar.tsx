@@ -15,6 +15,8 @@ interface ReaderToolbarProps {
   onToggleOutline?: () => void;
   citationsOpen?: boolean;
   onToggleCitations?: () => void;
+  commentsOpen?: boolean;
+  onToggleComments?: () => void;
 }
 
 export function ReaderToolbar({
@@ -27,6 +29,8 @@ export function ReaderToolbar({
   onToggleOutline,
   citationsOpen,
   onToggleCitations,
+  commentsOpen,
+  onToggleComments,
 }: ReaderToolbarProps) {
   const currentPage = useReaderState((s) => s.currentPage);
   const totalPages = useReaderState((s) => s.totalPages);
@@ -77,6 +81,15 @@ export function ReaderToolbar({
         {onToggleSidebar && (
           <Button variant={sidebarOpen ? "secondary" : "ghost"} size="sm" onClick={onToggleSidebar}>
             Highlights
+          </Button>
+        )}
+        {onToggleComments && (
+          <Button
+            variant={commentsOpen ? "secondary" : "ghost"}
+            size="sm"
+            onClick={onToggleComments}
+          >
+            Comments
           </Button>
         )}
         {onToggleChat && (

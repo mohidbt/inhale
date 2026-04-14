@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { ReaderToolbar } from "@/components/reader/reader-toolbar";
 import { SelectionToolbar, type HighlightColor } from "@/components/reader/selection-toolbar";
 import { HighlightsSidebar } from "@/components/reader/highlights-sidebar";
+import { CommentsSidebar } from "@/components/reader/comments-sidebar";
 import { ChatPanel } from "@/components/reader/chat-panel";
 import { OutlineSidebar, type PdfOutlineItem } from "@/components/reader/outline-sidebar";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
@@ -16,6 +17,7 @@ import { toast } from "sonner";
 import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
 import { useCitationClick } from "@/hooks/use-citation-click";
+import { useUserHighlights } from "@/hooks/use-user-highlights";
 
 const PdfViewer = dynamic(
   () => import("@/components/reader/pdf-viewer").then((m) => ({ default: m.PdfViewer })),
@@ -45,8 +47,16 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   const [chatOpen, setChatOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [citationsOpen, setCitationsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const pdfScrollRef = useRef<HTMLDivElement>(null);
   const { selection, clearSelection } = useTextSelection();
+  // Snapshot of `selection` taken when the user enters a long-lived
+  // sub-mode (e.g. clicking Comment). The toolbar must survive the
+  // selectionchange that fires when focus shifts to the popup, so we
+  // pin the selection here and keep rendering the toolbar from this
+  // snapshot until Save / Cancel / Escape clears it.
+  type ActiveSelection = NonNullable<typeof selection>;
+  const [activeSelection, setActiveSelection] = useState<ActiveSelection | null>(null);
   const currentPage = useReaderState((s) => s.currentPage);
   const totalPages = useReaderState((s) => s.totalPages);
   const [pdfOutline, setPdfOutline] = useState<PdfOutlineItem[] | null>(null);
@@ -77,6 +87,14 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
   };
   const [markers, setMarkers] = useState<MarkerRect[]>([]);
   const [citationsRefreshKey, setCitationsRefreshKey] = useState(0);
+
+  // User highlights — fetched at page level so overlay + sidebar share state
+  const {
+    highlights: sidebarHighlights,
+    userHighlights,
+    loading: highlightsLoading,
+    error: highlightsError,
+  } = useUserHighlights(documentId, refreshKey);
 
   useEffect(() => {
     setCitationsLoading(true);
@@ -147,21 +165,25 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
     }
   }, [documentId, patchCitation]);
 
+  // Toolbar reads from snapshot if present, else live selection.
+  const toolbarSelection = activeSelection ?? selection;
+
   const saveHighlight = useCallback(
     async (color: HighlightColor): Promise<number | null> => {
-      if (!selection) return null;
+      const sel = activeSelection ?? selection;
+      if (!sel) return null;
       setSaveError(null);
       try {
         const res = await fetch(`/api/documents/${documentId}/highlights`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            pageNumber: selection.pageNumber,
-            textContent: selection.text,
-            startOffset: selection.startOffset,
-            endOffset: selection.endOffset,
+            pageNumber: sel.pageNumber,
+            textContent: sel.text,
+            startOffset: sel.startOffset,
+            endOffset: sel.endOffset,
             color,
-            rects: selection.rects,
+            rects: sel.rects,
           }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -172,13 +194,19 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         return null;
       }
     },
-    [selection, documentId]
+    [selection, activeSelection, documentId]
   );
+
+  const handleDismissSelection = useCallback(() => {
+    setActiveSelection(null);
+    clearSelection();
+  }, [clearSelection]);
 
   const handleHighlight = useCallback(
     async (color: HighlightColor) => {
       await saveHighlight(color);
       setRefreshKey((k) => k + 1);
+      setActiveSelection(null);
       clearSelection();
     },
     [saveHighlight, clearSelection]
@@ -199,17 +227,26 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         }
       }
       setRefreshKey((k) => k + 1);
+      setActiveSelection(null);
       clearSelection();
     },
     [saveHighlight, documentId, clearSelection]
   );
 
   const handleAskAi = useCallback(() => {
-    if (!selection) return;
-    setChatSeed({ text: selection.text, nonce: Date.now() });
+    const sel = activeSelection ?? selection;
+    if (!sel) return;
+    setChatSeed({ text: sel.text, nonce: Date.now() });
     setChatOpen(true);
+    setActiveSelection(null);
     clearSelection();
-  }, [selection, clearSelection]);
+  }, [selection, activeSelection, clearSelection]);
+
+  const handleCommitStart = useCallback(() => {
+    // Pin the current selection so the toolbar stays mounted even after
+    // focus shifts and the window selection clears.
+    if (selection) setActiveSelection(selection);
+  }, [selection]);
 
   useEffect(() => {
     if (!saveError) return;
@@ -223,10 +260,15 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         e.preventDefault();
         setFindOpen(true);
       }
+      if (e.key === "Escape") {
+        // Escape dismisses any active selection toolbar (incl. comment popup)
+        setActiveSelection(null);
+        clearSelection();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [clearSelection]);
 
   useEffect(() => {
     if (!pdfDoc) return;
@@ -286,6 +328,8 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
         onToggleOutline={() => setOutlineOpen((o) => !o)}
         citationsOpen={citationsOpen}
         onToggleCitations={() => setCitationsOpen((o) => !o)}
+        commentsOpen={commentsOpen}
+        onToggleComments={() => setCommentsOpen((o) => !o)}
       />
       {saveError && (
         <div className="bg-destructive/10 text-destructive px-4 py-2 text-sm">
@@ -306,14 +350,16 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
           url={url}
           containerRef={pdfScrollRef}
           markers={markers}
+          userHighlights={userHighlights}
           onPdfLoad={setPdfDoc}
         />
         {sidebarOpen && (
           <DockableSidebar id="highlights">
             <HighlightsSidebar
-              documentId={documentId}
               open={sidebarOpen}
-              refreshKey={refreshKey}
+              highlights={sidebarHighlights}
+              loading={highlightsLoading}
+              error={highlightsError}
               onAskAi={(text) => {
                 setChatSeed({ text, nonce: Date.now() });
                 setChatOpen(true);
@@ -336,6 +382,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             <OutlineSidebar
               totalPages={totalPages}
               pdfOutline={pdfOutline}
+              pdfDoc={pdfDoc}
               onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
             />
           </DockableSidebar>
@@ -351,13 +398,29 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
             />
           </DockableSidebar>
         )}
-        {selection && (
+        {commentsOpen && (
+          <DockableSidebar id="comments">
+            <CommentsSidebar
+              open={commentsOpen}
+              highlights={sidebarHighlights}
+              loading={highlightsLoading}
+              error={highlightsError}
+              onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
+              onAskAi={(text) => {
+                setChatSeed({ text, nonce: Date.now() });
+                setChatOpen(true);
+              }}
+            />
+          </DockableSidebar>
+        )}
+        {toolbarSelection && (
           <SelectionToolbar
-            rect={selection.rect}
+            rect={toolbarSelection.rect}
             onHighlight={handleHighlight}
-            onDismiss={clearSelection}
+            onDismiss={handleDismissSelection}
             onComment={handleComment}
             onAskAi={handleAskAi}
+            onCommitStart={handleCommitStart}
           />
         )}
         {activeCitation && clickPosition && (

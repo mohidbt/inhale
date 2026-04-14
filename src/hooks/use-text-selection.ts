@@ -27,8 +27,19 @@ export function useTextSelection() {
     const domRect = range.getBoundingClientRect();
     const rect = { top: domRect.top, left: domRect.left, width: domRect.width, height: domRect.height };
 
-    // Find which PDF page this selection is on via the data-page-number attribute
-    const pageEl = range.startContainer.parentElement?.closest<HTMLElement>("[data-page-number]");
+    // Find which PDF page this selection is on. react-pdf's internal <Page>
+    // also sets data-page-number on its own div (without the natural-size
+    // attrs we set on the outer wrapper), so the nearest ancestor match is
+    // not enough — we must walk up to the wrapper that carries
+    // data-natural-width, which is the outer PdfPage div.
+    const startEl =
+      range.startContainer.nodeType === Node.ELEMENT_NODE
+        ? (range.startContainer as Element)
+        : range.startContainer.parentElement;
+    const pageEl =
+      startEl?.closest<HTMLElement>("[data-natural-width][data-page-number]") ??
+      startEl?.closest<HTMLElement>("[data-page-number]") ??
+      null;
     const pageNumber = pageEl ? Number(pageEl.getAttribute("data-page-number")) : 1;
 
     const naturalWidth = pageEl ? Number(pageEl.getAttribute("data-natural-width")) : NaN;
