@@ -2,7 +2,6 @@ export * from "./documents";
 export * from "./user-api-keys";
 export * from "./auth";
 export * from "./user-highlights";
-export * from "./user-comments";
 export * from "./document-sections";
 export * from "./document-chunks";
 export * from "./processing-jobs";

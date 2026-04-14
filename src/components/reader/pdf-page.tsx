@@ -3,6 +3,7 @@
 import { memo, useState } from "react";
 import { Page } from "react-pdf";
 import { HighlightLayer } from "./highlight-layer";
+import { UserHighlightLayer, type UserHighlight } from "./user-highlight-layer";
 import type { MarkerRect } from "./pdf-viewer";
 
 interface PdfPageProps {
@@ -10,6 +11,7 @@ interface PdfPageProps {
   width: number;
   zoom: number;
   markers?: MarkerRect[];
+  userHighlights?: UserHighlight[];
 }
 
 export const PdfPage = memo(function PdfPage({
@@ -17,13 +19,19 @@ export const PdfPage = memo(function PdfPage({
   width,
   zoom,
   markers = [],
+  userHighlights,
 }: PdfPageProps) {
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
   const displayWidth = width * zoom;
 
   return (
-    <div data-page-number={pageNumber} className="relative mb-4 shadow-md">
+    <div
+      data-page-number={pageNumber}
+      data-natural-width={naturalSize?.width}
+      data-natural-height={naturalSize?.height}
+      className="relative mb-4 shadow-md"
+    >
       <Page
         pageNumber={pageNumber}
         width={displayWidth}
@@ -37,6 +45,15 @@ export const PdfPage = memo(function PdfPage({
       {naturalSize && markers.length > 0 && (
         <HighlightLayer
           markers={markers}
+          naturalWidth={naturalSize.width}
+          naturalHeight={naturalSize.height}
+          displayWidth={displayWidth}
+        />
+      )}
+      {naturalSize && userHighlights && userHighlights.length > 0 && (
+        <UserHighlightLayer
+          highlights={userHighlights}
+          pageNumber={pageNumber}
           naturalWidth={naturalSize.width}
           naturalHeight={naturalSize.height}
           displayWidth={displayWidth}

@@ -8,6 +8,25 @@ import { eq, and } from "drizzle-orm";
 const VALID_COLORS = ["yellow", "green", "blue", "pink", "orange"] as const;
 type HighlightColor = typeof VALID_COLORS[number];
 
+type HighlightRect = { page: number; x0: number; y0: number; x1: number; y1: number };
+
+function isValidRects(v: unknown): v is HighlightRect[] {
+  return (
+    Array.isArray(v) &&
+    v.every((r) => {
+      if (!r || typeof r !== "object") return false;
+      const o = r as Record<string, unknown>;
+      return (
+        typeof o.page === "number" &&
+        typeof o.x0 === "number" &&
+        typeof o.y0 === "number" &&
+        typeof o.x1 === "number" &&
+        typeof o.y1 === "number"
+      );
+    })
+  );
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -49,7 +68,7 @@ export async function POST(
 
   const body = await request.json();
 
-  const { pageNumber, textContent, startOffset, endOffset, color, note } = body;
+  const { pageNumber, textContent, startOffset, endOffset, color, note, rects } = body;
 
   if (
     typeof pageNumber !== "number" ||
@@ -84,6 +103,7 @@ export async function POST(
         endOffset,
         color: resolvedColor,
         note: note ?? null,
+        rects: isValidRects(rects) ? rects : null,
       })
       .returning();
 

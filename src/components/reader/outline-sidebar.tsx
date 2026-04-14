@@ -1,92 +1,146 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { SectionPreview } from "./section-preview";
+import { useState, type ReactNode } from "react";
+import { PageThumbnail } from "./page-thumbnail";
+import { useComputedOutline } from "@/hooks/use-computed-outline";
 
-interface DocumentSection {
-  id: number;
-  documentId: number;
-  sectionIndex: number;
-  title: string | null;
-  content: string;
-  pageStart: number;
-  pageEnd: number;
-  createdAt: string;
+export interface PdfOutlineItem {
+  title: string;
+  pageIndex: number | null;
+  items: PdfOutlineItem[];
 }
 
-interface OutlineSidebarProps {
-  documentId: number;
-  open: boolean;
-  onNavigate?: (page: number) => void;
+interface Props {
+  totalPages: number;
+  pdfOutline: PdfOutlineItem[] | null;
+  pdfDoc?: unknown;
+  onNavigate: (pageNumber: number) => void;
+  dockControl?: ReactNode;
 }
 
-export function OutlineSidebar({ documentId, open, onNavigate }: OutlineSidebarProps) {
-  const [sections, setSections] = useState<DocumentSection[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function OutlineSidebar({ totalPages, pdfOutline, pdfDoc, onNavigate, dockControl }: Props) {
+  const hasNativeContents = !!(pdfOutline && pdfOutline.length > 0);
+  const [tab, setTab] = useState<"pages" | "contents">(hasNativeContents ? "contents" : "pages");
 
-  const loadSections = useCallback(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    fetch(`/api/documents/${documentId}/outline`, { signal: controller.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data) => setSections(data.sections ?? []))
-      .catch((err: unknown) => {
-        if (err instanceof Error && err.name !== "AbortError") {
-          setError("Failed to load outline");
-        }
-      })
-      .finally(() => setLoading(false));
-    return () => controller.abort();
-  }, [documentId]);
+  // Only run the computed-outline heuristic if no native outline exists,
+  // and only when the Contents tab is active (avoids upfront work).
+  const computed = useComputedOutline(
+    pdfDoc ?? null,
+    !hasNativeContents && tab === "contents"
+  );
 
-  useEffect(() => {
-    if (!open) return;
-    return loadSections();
-  }, [open, loadSections]);
-
-  if (!open) return null;
+  const contentsToShow: PdfOutlineItem[] | null = hasNativeContents
+    ? pdfOutline!
+    : computed.outline.length > 0
+      ? computed.outline
+      : null;
 
   return (
-    <div data-testid="outline-sidebar" className="flex w-72 flex-col border-l bg-background">
-      <div className="flex items-center justify-between border-b p-4">
-        <h2 className="text-sm font-semibold">Outline</h2>
+    <div data-testid="outline-sidebar" className="flex h-full w-full flex-col bg-background">
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
+        <h2 className="truncate text-sm font-semibold">Outline</h2>
+        {dockControl}
       </div>
-      <div className="flex-1 overflow-auto p-4">
-        {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        {!loading && !error && sections.length === 0 && (
-          <p className="text-xs text-muted-foreground">No outline generated yet.</p>
-        )}
-        {!loading && !error && sections.length > 0 && (
-          <div className="space-y-4">
-            {sections.map((section, i) => (
-              <SectionPreview
-                key={section.id ?? i}
-                title={section.title ?? ""}
-                preview={section.content}
-              >
-                <button
-                  className="w-full space-y-1 text-left"
-                  onClick={() => onNavigate?.(section.pageStart)}
-                >
-                  <p className="text-xs font-medium leading-snug">{section.title ?? "Untitled"}</p>
-                  <p className="text-[10px] text-muted-foreground">Page {section.pageStart}</p>
-                  {section.content && (
-                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                      {section.content}
-                    </p>
-                  )}
-                </button>
-              </SectionPreview>
+      <div role="tablist" className="flex border-b">
+        <button
+          role="tab"
+          aria-selected={tab === "pages"}
+          onClick={() => setTab("pages")}
+          className={`flex-1 p-2 text-xs ${tab === "pages" ? "font-semibold border-b-2 border-primary" : ""}`}
+        >
+          Pages
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "contents"}
+          onClick={() => setTab("contents")}
+          data-testid="outline-tab-contents"
+          className={`flex-1 p-2 text-xs ${tab === "contents" ? "font-semibold border-b-2 border-primary" : ""}`}
+        >
+          Contents
+        </button>
+      </div>
+      <div className="flex-1 overflow-auto p-2">
+        {tab === "pages" && (
+          <ul className="grid grid-cols-1 gap-2">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <li key={p}>
+                <PageThumbnail
+                  pageNumber={p}
+                  pdfDoc={
+                    pdfDoc as
+                      | {
+                          getPage: (n: number) => Promise<{
+                            getViewport: (params: { scale: number }) => {
+                              width: number;
+                              height: number;
+                            };
+                            render: (params: {
+                              canvasContext: CanvasRenderingContext2D;
+                              viewport: { width: number; height: number };
+                            }) => { promise: Promise<void>; cancel?: () => void };
+                          }>;
+                        }
+                      | null
+                  }
+                  width={120}
+                  onClick={onNavigate}
+                />
+              </li>
             ))}
-          </div>
+          </ul>
+        )}
+        {tab === "contents" && (
+          <>
+            {contentsToShow ? (
+              <OutlineTree items={contentsToShow} onNavigate={onNavigate} />
+            ) : computed.loading ? (
+              <p
+                data-testid="contents-loading"
+                className="px-2 py-4 text-center text-xs text-muted-foreground"
+              >
+                Building table of contents…
+              </p>
+            ) : (
+              <p
+                data-testid="contents-empty"
+                className="px-2 py-6 text-center text-xs text-muted-foreground"
+              >
+                This PDF has no table of contents.
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+function OutlineTree({
+  items,
+  onNavigate,
+  level = 0,
+}: {
+  items: PdfOutlineItem[];
+  onNavigate: (p: number) => void;
+  level?: number;
+}) {
+  return (
+    <ul className="space-y-0.5" style={{ paddingLeft: level * 8 }}>
+      {items.map((it, i) => (
+        <li key={i}>
+          <button
+            data-testid="outline-section"
+            onClick={() => it.pageIndex != null && onNavigate(it.pageIndex + 1)}
+            className="w-full text-left text-xs hover:underline"
+          >
+            {it.title}
+          </button>
+          {it.items.length > 0 && (
+            <OutlineTree items={it.items} onNavigate={onNavigate} level={level + 1} />
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

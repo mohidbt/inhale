@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import type { CitationWithStatus } from "@/components/reader/citation-card";
 
@@ -13,9 +13,10 @@ interface CitationsSidebarProps {
   citations: CitationWithStatus[];
   loading: boolean;
   onExtracted?: () => void;
+  dockControl?: ReactNode;
 }
 
-export function CitationsSidebar({ documentId, open, citations, loading, onExtracted }: CitationsSidebarProps) {
+export function CitationsSidebar({ documentId, open, citations, loading, onExtracted, dockControl }: CitationsSidebarProps) {
   const [extracting, setExtracting] = useState(false);
 
   const handleExtract = useCallback(async () => {
@@ -31,9 +32,10 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
   if (!open) return null;
 
   return (
-    <div className="flex w-72 flex-col border-l bg-background">
-      <div className="flex items-center justify-between border-b p-4">
-        <h2 className="text-sm font-semibold">Citations</h2>
+    <div className="flex h-full w-full flex-col bg-background">
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+        <h2 className="truncate text-sm font-semibold">Citations</h2>
+        {dockControl}
       </div>
       <div className="flex-1 overflow-auto p-4">
         {loading && (

@@ -112,125 +112,29 @@ test.describe("Highlights API", () => {
     const res = await page.request.get("/api/documents/1/highlights");
     expect(res.status()).toBe(401);
   });
-});
 
-test.describe("Comments API", () => {
-  test("create and list a standalone comment", async ({ page }) => {
+  test("POST creates highlight with rects; GET returns them", async ({ page }) => {
     await signUpAndLogin(page);
     const docId = await uploadDocument(page);
-    const base = `/api/documents/${docId}/comments`;
+    const base = `/api/documents/${docId}/highlights`;
 
-    // POST — create comment without a highlight link
     const createRes = await page.request.post(base, {
       data: {
-        content: "This is a standalone comment",
-        pageNumber: 2,
-      },
-    });
-    expect(createRes.status()).toBe(201);
-    const createBody = await createRes.json();
-    expect(createBody.comment).toBeDefined();
-    const commentId: number = createBody.comment.id;
-    expect(typeof commentId).toBe("number");
-    expect(createBody.comment.content).toBe("This is a standalone comment");
-    expect(createBody.comment.pageNumber).toBe(2);
-    expect(createBody.comment.highlightId).toBeNull();
-
-    // GET — list should contain the comment
-    const listRes = await page.request.get(base);
-    expect(listRes.status()).toBe(200);
-    const listBody = await listRes.json();
-    expect(Array.isArray(listBody.comments)).toBe(true);
-    const found = listBody.comments.find((c: { id: number }) => c.id === commentId);
-    expect(found).toBeDefined();
-    expect(found.content).toBe("This is a standalone comment");
-  });
-
-  test("create a comment linked to a highlight", async ({ page }) => {
-    await signUpAndLogin(page);
-    const docId = await uploadDocument(page);
-
-    // First create a highlight to link to
-    const hlRes = await page.request.post(`/api/documents/${docId}/highlights`, {
-      data: {
         pageNumber: 1,
-        textContent: "Linked highlight text",
+        textContent: "rect-test",
         startOffset: 0,
-        endOffset: 21,
-        color: "green",
-      },
-    });
-    expect(hlRes.status()).toBe(201);
-    const hlBody = await hlRes.json();
-    const highlightId: number = hlBody.highlight.id;
-
-    // Create a comment referencing that highlight
-    const createRes = await page.request.post(`/api/documents/${docId}/comments`, {
-      data: {
-        content: "Comment on the highlight",
-        pageNumber: 1,
-        highlightId,
+        endOffset: 9,
+        color: "yellow",
+        rects: [{ page: 1, x0: 10, y0: 100, x1: 50, y1: 110 }],
       },
     });
     expect(createRes.status()).toBe(201);
-    const createBody = await createRes.json();
-    expect(createBody.comment.highlightId).toBe(highlightId);
-    expect(createBody.comment.content).toBe("Comment on the highlight");
-  });
 
-  test("delete a comment", async ({ page }) => {
-    await signUpAndLogin(page);
-    const docId = await uploadDocument(page);
-    const base = `/api/documents/${docId}/comments`;
-
-    const createRes = await page.request.post(base, {
-      data: { content: "Comment to delete", pageNumber: 3 },
-    });
-    expect(createRes.status()).toBe(201);
-    const commentId: number = (await createRes.json()).comment.id;
-
-    // DELETE
-    const deleteRes = await page.request.delete(`${base}?commentId=${commentId}`);
-    expect(deleteRes.status()).toBe(200);
-    const deleteBody = await deleteRes.json();
-    expect(deleteBody.success).toBe(true);
-
-    // GET — comment should be gone
     const listRes = await page.request.get(base);
-    expect(listRes.status()).toBe(200);
-    const listBody = await listRes.json();
-    const stillPresent = listBody.comments.find((c: { id: number }) => c.id === commentId);
-    expect(stillPresent).toBeUndefined();
-  });
-
-  test("returns 422 when content is empty", async ({ page }) => {
-    await signUpAndLogin(page);
-    const docId = await uploadDocument(page);
-
-    const res = await page.request.post(`/api/documents/${docId}/comments`, {
-      data: { content: "   ", pageNumber: 1 },
-    });
-    expect(res.status()).toBe(422);
-  });
-
-  test("returns 422 when pageNumber is missing or invalid", async ({ page }) => {
-    await signUpAndLogin(page);
-    const docId = await uploadDocument(page);
-
-    const missingPage = await page.request.post(`/api/documents/${docId}/comments`, {
-      data: { content: "No page" },
-    });
-    expect(missingPage.status()).toBe(422);
-
-    const zeroPaged = await page.request.post(`/api/documents/${docId}/comments`, {
-      data: { content: "Zero page", pageNumber: 0 },
-    });
-    expect(zeroPaged.status()).toBe(422);
-  });
-
-  test("returns 401 when not authenticated", async ({ page }) => {
-    const res = await page.request.get("/api/documents/1/comments");
-    expect(res.status()).toBe(401);
+    const body = await listRes.json();
+    const latest = body.highlights.find((h: { textContent: string }) => h.textContent === "rect-test");
+    expect(latest).toBeDefined();
+    expect(latest.rects).toEqual([{ page: 1, x0: 10, y0: 100, x1: 50, y1: 110 }]);
   });
 });
 

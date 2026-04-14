@@ -9,40 +9,45 @@ interface ReaderToolbarProps {
   title: string;
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
-  commentSidebarOpen?: boolean;
-  onToggleCommentSidebar?: () => void;
-  onAddComment?: () => void;
-  showCommentInput?: boolean;
   chatOpen?: boolean;
   onToggleChat?: () => void;
   outlineOpen?: boolean;
   onToggleOutline?: () => void;
-  conceptsOpen?: boolean;
-  onToggleConcepts?: () => void;
   citationsOpen?: boolean;
   onToggleCitations?: () => void;
+  commentsOpen?: boolean;
+  onToggleComments?: () => void;
 }
 
 export function ReaderToolbar({
   title,
   sidebarOpen,
   onToggleSidebar,
-  commentSidebarOpen,
-  onToggleCommentSidebar,
-  onAddComment,
-  showCommentInput,
   chatOpen,
   onToggleChat,
   outlineOpen,
   onToggleOutline,
-  conceptsOpen,
-  onToggleConcepts,
   citationsOpen,
   onToggleCitations,
+  commentsOpen,
+  onToggleComments,
 }: ReaderToolbarProps) {
   const currentPage = useReaderState((s) => s.currentPage);
   const totalPages = useReaderState((s) => s.totalPages);
   const setScrollTargetPage = useReaderState((s) => s.setScrollTargetPage);
+  const collapsed = useReaderState((s) => s.toolbarCollapsed);
+  const setCollapsed = useReaderState((s) => s.setToolbarCollapsed);
+
+  if (collapsed) {
+    return (
+      <div
+        className="h-2 w-full cursor-pointer border-b bg-muted/40 transition-all hover:h-12 hover:bg-background"
+        onMouseEnter={() => setCollapsed(false)}
+        aria-label="Expand toolbar"
+        role="button"
+      />
+    );
+  }
 
   return (
     <header className="flex h-12 items-center justify-between border-b bg-background px-4">
@@ -78,22 +83,13 @@ export function ReaderToolbar({
             Highlights
           </Button>
         )}
-        {onToggleCommentSidebar && (
+        {onToggleComments && (
           <Button
-            variant={commentSidebarOpen ? "secondary" : "ghost"}
+            variant={commentsOpen ? "secondary" : "ghost"}
             size="sm"
-            onClick={onToggleCommentSidebar}
+            onClick={onToggleComments}
           >
             Comments
-          </Button>
-        )}
-        {onAddComment && (
-          <Button
-            variant={showCommentInput ? "secondary" : "ghost"}
-            size="sm"
-            onClick={onAddComment}
-          >
-            Add Comment
           </Button>
         )}
         {onToggleChat && (
@@ -114,15 +110,6 @@ export function ReaderToolbar({
             Outline
           </Button>
         )}
-        {onToggleConcepts && (
-          <Button
-            variant={conceptsOpen ? "secondary" : "ghost"}
-            size="sm"
-            onClick={onToggleConcepts}
-          >
-            Explain
-          </Button>
-        )}
         {onToggleCitations && (
           <Button
             variant={citationsOpen ? "secondary" : "ghost"}
@@ -132,6 +119,14 @@ export function ReaderToolbar({
             Citations
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setCollapsed(true)}
+          aria-label="Collapse toolbar"
+        >
+          ⇡
+        </Button>
       </div>
     </header>
   );

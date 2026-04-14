@@ -12,6 +12,14 @@ export interface ChatSource {
   relevance: number;
 }
 
+export type ChatScope = "page" | "selection" | "paper";
+
+export interface ChatSendOptions {
+  scope?: ChatScope;
+  selectionText?: string;
+  pageNumber?: number;
+}
+
 export function useChat(documentId: number) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sources, setSources] = useState<ChatSource[]>([]);
@@ -20,7 +28,11 @@ export function useChat(documentId: number) {
   const [conversationId, setConversationId] = useState<number | undefined>();
 
   const sendMessage = useCallback(
-    async (question: string, viewportContext: ViewportContext) => {
+    async (
+      question: string,
+      viewportContext: ViewportContext,
+      options?: ChatSendOptions
+    ) => {
       if (!question.trim() || streaming) return;
 
       setMessages((prev) => [...prev, { role: "user", content: question }]);
@@ -38,6 +50,9 @@ export function useChat(documentId: number) {
             viewportContext,
             history: messages.slice(-10),
             conversationId,
+            scope: options?.scope ?? "paper",
+            selectionText: options?.selectionText,
+            pageNumber: options?.pageNumber ?? viewportContext?.page,
           }),
         });
 
@@ -109,5 +124,30 @@ export function useChat(documentId: number) {
     setConversationId(undefined);
   }, []);
 
-  return { messages, sources, streaming, error, sendMessage, clearMessages };
+  const loadConversation = useCallback(async (id: number) => {
+    try {
+      const res = await fetch(`/api/conversations/${id}/messages`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as {
+        messages: { role: "user" | "assistant"; content: string }[];
+      };
+      setMessages(data.messages.map((m) => ({ role: m.role, content: m.content })));
+      setSources([]);
+      setError(null);
+      setConversationId(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load conversation");
+    }
+  }, []);
+
+  return {
+    messages,
+    sources,
+    streaming,
+    error,
+    conversationId,
+    sendMessage,
+    clearMessages,
+    loadConversation,
+  };
 }

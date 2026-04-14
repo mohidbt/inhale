@@ -5,6 +5,7 @@ import { Document, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import { PdfPage } from "./pdf-page";
+import type { UserHighlight } from "./user-highlight-layer";
 import { useReaderState } from "@/hooks/use-reader-state";
 import { usePdfTextSelection } from "@/hooks/use-pdf-text-selection";
 
@@ -36,9 +37,11 @@ interface PdfViewerProps {
   url: string;
   containerRef?: React.RefObject<HTMLDivElement | null>;
   markers?: MarkerRect[];
+  userHighlights?: UserHighlight[];
+  onPdfLoad?: (pdf: unknown) => void;
 }
 
-export function PdfViewer({ url, containerRef: externalRef, markers = [] }: PdfViewerProps) {
+export function PdfViewer({ url, containerRef: externalRef, markers = [], userHighlights = [], onPdfLoad }: PdfViewerProps) {
   usePdfTextSelection();
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
@@ -56,11 +59,12 @@ export function PdfViewer({ url, containerRef: externalRef, markers = [] }: PdfV
   const [scrollTop, setScrollTop] = useState(0);
 
   const onDocumentLoadSuccess = useCallback(
-    ({ numPages }: { numPages: number }) => {
+    (pdf: { numPages: number }) => {
       setLoading(false);
-      setTotalPages(numPages);
+      setTotalPages(pdf.numPages);
+      onPdfLoad?.(pdf);
     },
-    [setTotalPages]
+    [setTotalPages, onPdfLoad]
   );
 
   // Measure container width and height
@@ -73,6 +77,21 @@ export function PdfViewer({ url, containerRef: externalRef, markers = [] }: PdfV
     });
     ro.observe(el);
     return () => ro.disconnect();
+  }, [containerRef]);
+
+  // Trackpad pinch / ctrl+wheel zoom
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const { setZoom, zoom: cur } = useReaderState.getState();
+      const factor = Math.exp(-e.deltaY * 0.005);
+      setZoom(cur * factor);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
   }, [containerRef]);
 
   // Track scroll position for virtualization
@@ -202,6 +221,7 @@ export function PdfViewer({ url, containerRef: externalRef, markers = [] }: PdfV
                     width={containerWidth}
                     zoom={zoom}
                     markers={markers.filter((m) => m.pageNumber === pageNumber)}
+                    userHighlights={userHighlights.filter((h) => (h.rects ?? []).some((r) => r.page === pageNumber))}
                   />
                 );
               }

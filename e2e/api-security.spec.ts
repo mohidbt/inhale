@@ -21,11 +21,6 @@ test.describe("API route security — unauthenticated 401s", () => {
     expect(res.status()).toBe(401);
   });
 
-  test("GET /api/documents/999/comments returns 401", async ({ page }) => {
-    const res = await page.request.get("/api/documents/999/comments");
-    expect(res.status()).toBe(401);
-  });
-
   test("GET /api/documents/999/outline returns 401", async ({ page }) => {
     const res = await page.request.get("/api/documents/999/outline");
     expect(res.status()).toBe(401);
