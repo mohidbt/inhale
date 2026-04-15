@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
+import { X } from "lucide-react";
 import { useChat, type ChatScope } from "@/hooks/use-chat";
 import { useViewportTracking } from "@/hooks/use-viewport-tracking";
 import { ChatMessage } from "./chat-message";
@@ -21,7 +22,6 @@ interface ChatPanelProps {
   seed?: ChatSeed | null;
   dockControl?: ReactNode;
   currentPage?: number;
-  currentSelection?: { text: string; pageNumber: number } | null;
 }
 
 interface ConversationListItem {
@@ -31,6 +31,10 @@ interface ConversationListItem {
   updatedAt: string;
 }
 
+// UI-level scope. Backend still accepts "selection"; we pick it automatically
+// when an attached selection exists.
+type UiScope = "page" | "paper";
+
 export function ChatPanel({
   documentId,
   open,
@@ -38,20 +42,18 @@ export function ChatPanel({
   seed,
   dockControl,
   currentPage,
-  currentSelection,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [scope, setScope] = useState<ChatScope>("paper");
-  // Pending scope/selection from a seed (e.g. Ask AI on a highlight). The
-  // user may edit the input field but the scope still travels with the
-  // next send. Cleared after sending or after a fresh non-seeded turn.
-  const [pendingSeed, setPendingSeed] = useState<{
-    selectionText: string;
-    pageNumber?: number;
-    scope: ChatScope;
+  const [uiScope, setUiScope] = useState<UiScope>("paper");
+  // Highlight text attached via Ask-AI. Travels with the next send as
+  // scope="selection". Shown as a dismissable chip above the input so the
+  // user knows the bot has the highlighted passage in context.
+  const [attachedSelection, setAttachedSelection] = useState<{
+    text: string;
+    pageNumber: number;
   } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -71,16 +73,14 @@ export function ChatPanel({
   useEffect(() => {
     if (!seed) return;
     setInput(seed.text);
-    if (seed.scope === "selection" || seed.scope === "page") {
-      setPendingSeed({
-        selectionText: seed.text,
-        pageNumber: seed.pageNumber,
-        scope: seed.scope,
-      });
+    if (seed.scope === "selection" && seed.pageNumber != null) {
+      setAttachedSelection({ text: seed.text, pageNumber: seed.pageNumber });
+      setUiScope("page");
+    } else if (seed.scope === "page") {
+      setUiScope("page");
     } else {
-      setPendingSeed(null);
+      setUiScope("paper");
     }
-    if (seed.scope) setScope(seed.scope);
     inputRef.current?.focus();
   }, [seed]);
 
@@ -101,40 +101,31 @@ export function ChatPanel({
     if (historyOpen) fetchConversations();
   }, [historyOpen, fetchConversations, conversationId]);
 
-  const selectionAvailable = !!currentSelection;
-  // Effective scope: if user picked "selection" but none is available,
-  // the send button will be disabled — we still keep scope state as-is.
-  const effectiveScope: ChatScope = scope;
+  const pageAvailable = currentPage != null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || streaming) return;
-    // Block send when scope=selection but nothing selected.
-    if (effectiveScope === "selection" && !currentSelection) return;
     const q = input;
     setInput("");
-    let sendOptions: { scope: ChatScope; selectionText?: string; pageNumber?: number } | undefined;
-    if (pendingSeed) {
-      sendOptions = {
-        scope: pendingSeed.scope,
-        selectionText: pendingSeed.selectionText,
-        pageNumber: pendingSeed.pageNumber,
-      };
-    } else if (effectiveScope === "selection" && currentSelection) {
+
+    let sendOptions: { scope: ChatScope; selectionText?: string; pageNumber?: number };
+    if (attachedSelection) {
       sendOptions = {
         scope: "selection",
-        selectionText: currentSelection.text,
-        pageNumber: currentSelection.pageNumber,
+        selectionText: attachedSelection.text,
+        pageNumber: attachedSelection.pageNumber,
       };
-    } else if (effectiveScope === "page") {
-      sendOptions = {
-        scope: "page",
-        pageNumber: currentPage,
-      };
+    } else if (uiScope === "page" && pageAvailable) {
+      sendOptions = { scope: "page", pageNumber: currentPage };
     } else {
       sendOptions = { scope: "paper" };
     }
-    setPendingSeed(null);
+
+    setAttachedSelection(null);
+    // After send, default back to Full PDF so next manual question is paper-wide.
+    setUiScope("paper");
+
     await sendMessage(
       q,
       viewportRef.current ?? { page: currentPage ?? 1, scrollPct: 0 },
@@ -150,10 +141,14 @@ export function ChatPanel({
 
   const handleNew = () => {
     clearMessages();
+    setAttachedSelection(null);
+    setUiScope("paper");
     setHistoryOpen(false);
   };
 
   if (!open) return null;
+
+  const pageLabel = pageAvailable ? `Page ${currentPage}` : "Page";
 
   return (
     <div className="flex flex-col h-full w-full bg-background">
@@ -239,38 +234,55 @@ export function ChatPanel({
         </div>
       )}
       {error && <p className="px-3 py-1 text-xs text-red-500">{error}</p>}
+      {attachedSelection && (
+        <div className="mx-3 mt-2 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-medium text-primary">
+              Highlighted · Page {attachedSelection.pageNumber}
+            </p>
+            <p className="line-clamp-2 text-xs text-foreground/80">
+              “{attachedSelection.text}”
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAttachedSelection(null)}
+            aria-label="Remove highlighted context"
+            className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
       <div className="border-t px-3 pt-2 flex items-center gap-1">
-        {(["paper", "page", "selection"] as const).map((s) => {
-          const disabled = s === "selection" && !selectionAvailable;
-          const active = s === scope && !disabled;
-          const label =
-            s === "paper"
-              ? "Paper"
-              : s === "page"
-              ? currentPage != null
-                ? `Page ${currentPage}`
-                : "Page"
-              : "Selection";
-          return (
-            <button
-              key={s}
-              type="button"
-              disabled={disabled}
-              onClick={() => setScope(s)}
-              className={cn(
-                "rounded border px-2 py-0.5 text-[10px] transition-colors",
-                active
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background text-muted-foreground hover:bg-muted",
-                disabled && "opacity-50 cursor-not-allowed hover:bg-background"
-              )}
-              aria-pressed={active}
-              aria-label={`Scope: ${label}`}
-            >
-              {label}
-            </button>
-          );
-        })}
+        <button
+          type="button"
+          disabled={!pageAvailable}
+          onClick={() => setUiScope("page")}
+          className={cn(
+            "rounded border px-2 py-0.5 text-[10px] transition-colors",
+            uiScope === "page" && pageAvailable
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-background text-muted-foreground hover:bg-muted",
+            !pageAvailable && "opacity-50 cursor-not-allowed hover:bg-background"
+          )}
+          aria-pressed={uiScope === "page" && pageAvailable}
+        >
+          {pageLabel}
+        </button>
+        <button
+          type="button"
+          onClick={() => setUiScope("paper")}
+          className={cn(
+            "rounded border px-2 py-0.5 text-[10px] transition-colors",
+            uiScope === "paper"
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-background text-muted-foreground hover:bg-muted"
+          )}
+          aria-pressed={uiScope === "paper"}
+        >
+          Full PDF
+        </button>
       </div>
       <form onSubmit={handleSubmit} className="p-3 flex gap-2">
         <Input
@@ -284,11 +296,7 @@ export function ChatPanel({
         <Button
           type="submit"
           size="sm"
-          disabled={
-            streaming ||
-            !input.trim() ||
-            (effectiveScope === "selection" && !currentSelection)
-          }
+          disabled={streaming || !input.trim()}
         >
           {streaming ? "..." : "Send"}
         </Button>
