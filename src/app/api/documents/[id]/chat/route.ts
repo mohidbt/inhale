@@ -164,11 +164,19 @@ export async function POST(
       .sort((a, b) => Number(b.score) - Number(a.score))
       .slice(0, 8);
 
+    // Anchor = opening of the paper. Use MIN(page_start) rather than the
+    // literal 1 because some PDFs extract a blank leading page (or even a
+    // cover page filtered out by the chunker's empty-content skip), so the
+    // first real chunk may start on page 2+.
     const anchorRaw = await db.execute(sql`
       SELECT content
       FROM document_chunks
       WHERE document_id = ${documentId}
-        AND page_start = 1
+        AND page_start = (
+          SELECT MIN(page_start)
+          FROM document_chunks
+          WHERE document_id = ${documentId}
+        )
       ORDER BY chunk_index ASC
       LIMIT 3
     `);
@@ -180,6 +188,33 @@ export async function POST(
       joinedAnchor.length > MAX_ANCHOR_CHARS
         ? `${joinedAnchor.slice(0, MAX_ANCHOR_CHARS)}\n…[truncated]`
         : joinedAnchor || null;
+  }
+
+  // Vector-miss fallback. The ivfflat index was created with `lists=100`
+  // and pgvector defaults to `probes=1`, so for a per-document subset of
+  // ~30 chunks most lists are empty and a single probe often returns
+  // zero rows — producing the "cannot find any content" guard on valid
+  // documents. When vector search misses, fall back to the first 6
+  // chunks by chunk_index so the LLM still has material to reason over.
+  // Runs for every scope so selection/page queries also keep doc-wide
+  // supporting context.
+  if (supportingChunks.length === 0) {
+    const fallbackRaw = await db.execute(sql`
+      SELECT id, content, page_start, page_end
+      FROM document_chunks
+      WHERE document_id = ${documentId}
+      ORDER BY chunk_index ASC
+      LIMIT 6
+    `);
+    const fallbackRows = (Array.isArray(fallbackRaw)
+      ? fallbackRaw
+      : (fallbackRaw as { rows: unknown[] }).rows ?? []) as Omit<ChunkRow, "score">[];
+    supportingChunks = fallbackRows.map((r) => ({ ...r, score: 0 }));
+    console.warn("[chat/route] vector search returned 0 rows — used first-N fallback", {
+      documentId,
+      scope,
+      fallbackCount: supportingChunks.length,
+    });
   }
 
   const supportingText = supportingChunks

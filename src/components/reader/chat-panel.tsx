@@ -72,7 +72,8 @@ export function ChatPanel({
 
   useEffect(() => {
     if (!seed) return;
-    setInput(seed.text);
+    // The highlighted text goes into the chip only — never into the input
+    // field. The user types their own question.
     if (seed.scope === "selection" && seed.pageNumber != null) {
       setAttachedSelection({ text: seed.text, pageNumber: seed.pageNumber });
       setUiScope("page");
@@ -122,10 +123,8 @@ export function ChatPanel({
       sendOptions = { scope: "paper" };
     }
 
-    setAttachedSelection(null);
-    // After send, default back to Full PDF so next manual question is paper-wide.
-    setUiScope("paper");
-
+    // Chip persists across turns — follow-ups stay anchored to the same
+    // highlight until the user dismisses it with the ✕ button.
     await sendMessage(
       q,
       viewportRef.current ?? { page: currentPage ?? 1, scrollPct: 0 },
@@ -235,12 +234,12 @@ export function ChatPanel({
       )}
       {error && <p className="px-3 py-1 text-xs text-red-500">{error}</p>}
       {attachedSelection && (
-        <div className="mx-3 mt-2 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5">
+        <div className="mx-3 mt-2 flex items-start gap-2 rounded-md border border-border bg-background px-2 py-1.5">
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-medium text-primary">
+            <p className="text-[10px] font-medium text-foreground">
               Highlighted · Page {attachedSelection.pageNumber}
             </p>
-            <p className="line-clamp-2 text-xs text-foreground/80">
+            <p className="line-clamp-2 text-xs text-muted-foreground">
               “{attachedSelection.text}”
             </p>
           </div>
