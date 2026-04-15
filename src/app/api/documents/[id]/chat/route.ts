@@ -52,13 +52,65 @@ export async function POST(
   const userId = session.user.id; // string
 
   const [doc] = await db
-    .select({ id: documents.id })
+    .select({ id: documents.id, processingStatus: documents.processingStatus })
     .from(documents)
     .where(and(eq(documents.id, documentId), eq(documents.userId, userId)));
   if (!doc) return new Response("Not found", { status: 404 });
 
   const body = (await request.json()) as ChatBody;
   if (!body.question?.trim()) return new Response("Bad Request", { status: 400 });
+
+  if (doc.processingStatus !== "ready") {
+    const statusMessage =
+      doc.processingStatus === "pending" || doc.processingStatus === "processing"
+        ? "This document is still being processed. Refresh in a minute and try again."
+        : doc.processingStatus === "failed"
+          ? "This document failed to process. Please re-upload it."
+          : "This document is not ready for chat yet.";
+
+    let convId = body.conversationId;
+    if (!convId) {
+      const [conv] = await db
+        .insert(agentConversations)
+        .values({ userId, documentId, title: body.question.slice(0, 80) })
+        .returning({ id: agentConversations.id });
+      convId = conv.id;
+    }
+    await db.insert(agentMessages).values({
+      conversationId: convId,
+      role: "user",
+      content: body.question,
+      viewportContext: body.viewportContext ?? null,
+    });
+    await db.insert(agentMessages).values({
+      conversationId: convId,
+      role: "assistant",
+      content: statusMessage,
+    });
+    await db
+      .update(agentConversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(agentConversations.id, convId));
+
+    const statusStream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        const send = (obj: unknown) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        send({ type: "sources", sources: [], conversationId: convId });
+        send({ type: "token", content: statusMessage });
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    return new Response(statusStream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  }
 
   const scope: ChatScope = body.scope ?? "paper";
   const focusPage =

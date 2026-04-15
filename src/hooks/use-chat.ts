@@ -2,9 +2,15 @@
 import { useState, useCallback } from "react";
 import { ViewportContext } from "./use-viewport-tracking";
 
+export interface ChatAttachment {
+  text: string;
+  pageNumber: number;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  attachment?: ChatAttachment;
 }
 
 export interface ChatSource {
@@ -18,6 +24,7 @@ export interface ChatSendOptions {
   scope?: ChatScope;
   selectionText?: string;
   pageNumber?: number;
+  attachment?: ChatAttachment;
 }
 
 export function useChat(documentId: number) {
@@ -35,7 +42,10 @@ export function useChat(documentId: number) {
     ) => {
       if (!question.trim() || streaming) return;
 
-      setMessages((prev) => [...prev, { role: "user", content: question }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", content: question, attachment: options?.attachment },
+      ]);
       setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
       setSources([]);
       setStreaming(true);

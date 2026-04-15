@@ -30,5 +30,11 @@ export default async function ReaderPage({
 
   if (!doc) notFound();
 
-  return <ReaderClient documentId={doc.id} title={doc.title} />;
+  return (
+    <ReaderClient
+      documentId={doc.id}
+      title={doc.title}
+      processingStatus={doc.processingStatus}
+    />
+  );
 }

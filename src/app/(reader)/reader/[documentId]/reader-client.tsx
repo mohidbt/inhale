@@ -35,9 +35,12 @@ const PdfViewer = dynamic(
   }
 );
 
+type DocProcessingStatus = "pending" | "processing" | "ready" | "failed";
+
 interface ReaderClientProps {
   documentId: number;
   title: string;
+  processingStatus: DocProcessingStatus;
 }
 
 /**
@@ -118,7 +121,7 @@ function SidebarPanelFragment({
   );
 }
 
-export function ReaderClient({ documentId, title }: ReaderClientProps) {
+export function ReaderClient({ documentId, title, processingStatus }: ReaderClientProps) {
   const url = `/api/documents/${documentId}/file`;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -558,6 +561,7 @@ export function ReaderClient({ documentId, title }: ReaderClientProps) {
                   seed={chatSeed}
                   dockControl={<DockMenu dock={chatDock} onChange={setChatDock} />}
                   currentPage={currentPage}
+                  processingStatus={processingStatus}
                 />
               ),
             });

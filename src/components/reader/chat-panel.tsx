@@ -1,8 +1,9 @@
 "use client";
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { X, Sparkles } from "lucide-react";
 import { useChat, type ChatScope } from "@/hooks/use-chat";
 import { useViewportTracking } from "@/hooks/use-viewport-tracking";
+import { useReaderState } from "@/hooks/use-reader-state";
 import { ChatMessage } from "./chat-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,8 @@ export interface ChatSeed {
   nonce: number;
 }
 
+type DocProcessingStatus = "pending" | "processing" | "ready" | "failed";
+
 interface ChatPanelProps {
   documentId: number;
   open: boolean;
@@ -22,6 +25,7 @@ interface ChatPanelProps {
   seed?: ChatSeed | null;
   dockControl?: ReactNode;
   currentPage?: number;
+  processingStatus?: DocProcessingStatus;
 }
 
 interface ConversationListItem {
@@ -42,6 +46,7 @@ export function ChatPanel({
   seed,
   dockControl,
   currentPage,
+  processingStatus = "ready",
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -102,6 +107,10 @@ export function ChatPanel({
     if (historyOpen) fetchConversations();
   }, [historyOpen, fetchConversations, conversationId]);
 
+  useEffect(() => {
+    if (!open) setAttachedSelection(null);
+  }, [open]);
+
   const pageAvailable = currentPage != null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -110,12 +119,21 @@ export function ChatPanel({
     const q = input;
     setInput("");
 
-    let sendOptions: { scope: ChatScope; selectionText?: string; pageNumber?: number };
+    let sendOptions: {
+      scope: ChatScope;
+      selectionText?: string;
+      pageNumber?: number;
+      attachment?: { text: string; pageNumber: number };
+    };
     if (attachedSelection) {
       sendOptions = {
         scope: "selection",
         selectionText: attachedSelection.text,
         pageNumber: attachedSelection.pageNumber,
+        attachment: {
+          text: attachedSelection.text,
+          pageNumber: attachedSelection.pageNumber,
+        },
       };
     } else if (uiScope === "page" && pageAvailable) {
       sendOptions = { scope: "page", pageNumber: currentPage };
@@ -123,18 +141,18 @@ export function ChatPanel({
       sendOptions = { scope: "paper" };
     }
 
-    // Chip persists across turns — follow-ups stay anchored to the same
-    // highlight until the user dismisses it with the ✕ button.
     await sendMessage(
       q,
       viewportRef.current ?? { page: currentPage ?? 1, scrollPct: 0 },
       sendOptions
     );
+    setAttachedSelection(null);
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   const handleLoad = async (id: number) => {
     await loadConversation(id);
+    setAttachedSelection(null);
     setHistoryOpen(false);
   };
 
@@ -148,6 +166,19 @@ export function ChatPanel({
   if (!open) return null;
 
   const pageLabel = pageAvailable ? `Page ${currentPage}` : "Page";
+  const paperDisabled = attachedSelection != null;
+  const smartOn = uiScope === "page" || attachedSelection != null;
+  const docReady = processingStatus === "ready";
+  const statusBanner =
+    processingStatus === "pending" || processingStatus === "processing"
+      ? { tone: "info" as const, text: "Document is still being processed. Refresh in a minute." }
+      : processingStatus === "failed"
+        ? { tone: "error" as const, text: "Upload failed. Please re-upload to chat." }
+        : null;
+
+  const handleJumpToPage = (page: number) => {
+    useReaderState.getState().setScrollTargetPage(page);
+  };
 
   return (
     <div className="flex flex-col h-full w-full bg-background">
@@ -215,87 +246,137 @@ export function ChatPanel({
             key={i}
             role={msg.role}
             content={msg.content}
+            attachment={msg.attachment}
             isStreaming={streaming && i === messages.length - 1 && msg.role === "assistant"}
           />
         ))}
         <div ref={messagesEndRef} />
       </div>
-      {sources.length > 0 && (
-        <div className="px-3 py-2 border-t flex flex-wrap gap-1">
-          {sources.map((s, i) => (
-            <span
-              key={i}
-              className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-            >
-              p.{s.page}
+      <div className="border-t px-3 pt-2 space-y-2">
+        {sources.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[10px] font-medium text-muted-foreground mr-1">
+              Cited:
             </span>
-          ))}
-        </div>
-      )}
-      {error && <p className="px-3 py-1 text-xs text-red-500">{error}</p>}
-      {attachedSelection && (
-        <div className="mx-3 mt-2 flex items-start gap-2 rounded-md border border-border bg-background px-2 py-1.5">
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-medium text-foreground">
-              Highlighted · Page {attachedSelection.pageNumber}
-            </p>
-            <p className="line-clamp-2 text-xs text-muted-foreground">
-              “{attachedSelection.text}”
-            </p>
+            {sources.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => handleJumpToPage(s.page)}
+                title={`Jump to page ${s.page}`}
+                className="inline-flex items-center rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground transition-colors hover:bg-muted cursor-pointer"
+              >
+                Page {s.page}
+              </button>
+            ))}
           </div>
+        )}
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        {attachedSelection && (
+          <div className="flex items-start gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium text-foreground">
+                Highlighted · Page {attachedSelection.pageNumber}
+              </p>
+              <p className="line-clamp-2 text-xs text-muted-foreground">
+                “{attachedSelection.text}”
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAttachedSelection(null)}
+              aria-label="Remove highlighted context"
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
+        <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setAttachedSelection(null)}
-            aria-label="Remove highlighted context"
-            className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            disabled={!pageAvailable}
+            onClick={() => setUiScope("page")}
+            className={cn(
+              "rounded border px-2 py-0.5 text-[10px] transition-colors",
+              uiScope === "page" && pageAvailable
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground hover:bg-muted",
+              !pageAvailable && "opacity-50 cursor-not-allowed hover:bg-background"
+            )}
+            aria-pressed={uiScope === "page" && pageAvailable}
           >
-            <X className="size-3.5" />
+            {pageLabel}
           </button>
+          <button
+            type="button"
+            disabled={paperDisabled}
+            onClick={() => setUiScope("paper")}
+            className={cn(
+              "rounded border px-2 py-0.5 text-[10px] transition-colors",
+              uiScope === "paper" && !paperDisabled
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground hover:bg-muted",
+              paperDisabled && "opacity-50 cursor-not-allowed hover:bg-background"
+            )}
+            aria-pressed={uiScope === "paper" && !paperDisabled}
+            title={
+              paperDisabled
+                ? "Disabled while a highlight is attached"
+                : "Search across the entire paper"
+            }
+          >
+            Deep Paper Search
+          </button>
+          <span
+            role="status"
+            aria-label="Smart full paper search indicator"
+            title="System auto-pulls top supporting chunks from across the paper"
+            className={cn(
+              "ml-auto inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] transition-colors select-none",
+              smartOn
+                ? "border-border bg-background text-foreground"
+                : "border-border bg-background text-muted-foreground opacity-60"
+            )}
+          >
+            <Sparkles className={cn("size-3", smartOn ? "text-foreground" : "text-muted-foreground")} />
+            Smart Full Paper Search
+            <span
+              className={cn(
+                "ml-0.5 inline-block size-1.5 rounded-full",
+                smartOn ? "bg-foreground" : "bg-muted-foreground/40"
+              )}
+              aria-hidden="true"
+            />
+          </span>
+        </div>
+      </div>
+      {statusBanner && (
+        <div
+          className={cn(
+            "mx-3 mt-2 rounded-md border px-2 py-1.5 text-xs",
+            statusBanner.tone === "error"
+              ? "border-red-200 bg-red-50 text-red-700"
+              : "border-border bg-muted text-foreground"
+          )}
+          role="status"
+        >
+          {statusBanner.text}
         </div>
       )}
-      <div className="border-t px-3 pt-2 flex items-center gap-1">
-        <button
-          type="button"
-          disabled={!pageAvailable}
-          onClick={() => setUiScope("page")}
-          className={cn(
-            "rounded border px-2 py-0.5 text-[10px] transition-colors",
-            uiScope === "page" && pageAvailable
-              ? "bg-primary text-primary-foreground border-primary"
-              : "bg-background text-muted-foreground hover:bg-muted",
-            !pageAvailable && "opacity-50 cursor-not-allowed hover:bg-background"
-          )}
-          aria-pressed={uiScope === "page" && pageAvailable}
-        >
-          {pageLabel}
-        </button>
-        <button
-          type="button"
-          onClick={() => setUiScope("paper")}
-          className={cn(
-            "rounded border px-2 py-0.5 text-[10px] transition-colors",
-            uiScope === "paper"
-              ? "bg-primary text-primary-foreground border-primary"
-              : "bg-background text-muted-foreground hover:bg-muted"
-          )}
-          aria-pressed={uiScope === "paper"}
-        >
-          Full PDF
-        </button>
-      </div>
       <form onSubmit={handleSubmit} className="p-3 flex gap-2">
         <Input
           ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about this paper..."
-          disabled={streaming}
+          placeholder={docReady ? "Ask about this paper..." : "Chat unavailable until processing completes"}
+          disabled={streaming || !docReady}
           className="text-sm"
         />
         <Button
           type="submit"
           size="sm"
-          disabled={streaming || !input.trim()}
+          disabled={streaming || !input.trim() || !docReady}
         >
           {streaming ? "..." : "Send"}
         </Button>
