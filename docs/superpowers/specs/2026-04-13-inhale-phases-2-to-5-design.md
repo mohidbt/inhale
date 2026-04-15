@@ -16,12 +16,19 @@
 - **Unit tests:** Vitest.
 - **TDD:** every new route handler, service, and utility gets a failing test first.
 
-### 0.2 LangChain / LangGraph migration
-All existing LLM-calling routes migrate off `@openrouter/sdk` to LangChain JS (`langchain` + `@langchain/langgraph` + `@langchain/openai`). OpenRouter stays as the HTTP endpoint — BYOK user-key flow unchanged.
+### 0.2 Python agents service + LangChain/LangGraph migration
+All existing LLM-calling routes migrate off `@openrouter/sdk`. The AI/ML plane moves to a Python FastAPI service (`services/agents/`) running as a Vercel Service alongside the Next.js web service (see §0.7). OpenRouter stays as the HTTP endpoint — BYOK user-key flow unchanged.
 
-**Primitive choices are DEFERRED** to Phase 2.0.3 kickoff, which begins by invoking `langchain-skills:framework-selection` and recording its decisions as an inline amendment to this spec. The `langchain-skills` suite (`langchain-fundamentals`, `langgraph-fundamentals`, `langchain-rag`, `langgraph-persistence`, `langchain-middleware`) is consulted as relevant during implementation planning.
+**Framework primitive choices are DEFERRED** to Phase 2.0.3 kickoff. The kickoff ritual is mandatory and runs in this order:
+1. `langchain-skills:framework-selection` — output decides Python framework (LangGraph, LangChain, or other) and primitives. Record decisions inline as an amendment to this section.
+2. `fastapi` skill — mandatory for any code touching `services/agents/`.
+3. `langchain-skills:langchain-dependencies` — Python deps per framework choice.
+4. `langchain-skills:langchain-rag` + `langchain-skills:langgraph-persistence` — consulted as relevant.
+5. Confirm Python runtime version per Vercel Python runtime docs at kickoff.
 
-**Locked constraint:** route-handler request/response contracts stay byte-identical so all Phase 1 e2e tests pass unchanged. Non-negotiable.
+No LangChain/LangGraph code is written before the framework-selection skill has run. Mentions of "LangGraph" elsewhere in this spec are candidates, not commitments.
+
+**Locked constraint:** browser-facing route-handler request/response contracts stay byte-identical so all Phase 1 e2e tests pass unchanged. Non-negotiable. The Next.js proxy layer forwards the browser's existing `/api/*` calls to the Python service without schema change.
 
 ### 0.3 Chandra two-tier pipeline
 On upload: `unpdf` runs first (fast text → chunks → embeddings; existing Phase 1.1 behavior preserved). If user has a Chandra Datalab key configured, a second pass runs Chandra in "accurate" mode and populates `document_segments` with structured output.
@@ -49,6 +56,42 @@ Top reader toolbar becomes collapsible: button collapses it to a thin hover-reve
 
 ### 0.6 Chat persistence UI
 `agent_conversations` + `agent_messages` schemas already persist threads. Missing piece: UI. The Chat sidebar header gets a history icon (top-right). Click → inline thread list (most recent first, preview = first user message). Click thread → loads messages, resumes. "New conversation" button creates a fresh `conversationId`.
+
+### 0.7 Topology — Next.js + FastAPI via Vercel Services
+
+Single Vercel deployment. Two services via `experimentalServices` in `vercel.json`:
+
+- `web` — Next.js at `routePrefix: "/"`. Owns browser UI, Better Auth sessions, upload/library CRUD, BYOK key encrypt/decrypt, and a thin proxy layer for `/api/documents/*/chat|outline|explain` that validates the session, decrypts the BYOK key, and forwards to the `agents` service.
+- `agents` — FastAPI at `routePrefix: "/agents"`. Owns every LLM call, every embedding call, every agent/tool loop, Chandra OCR client (Phase 3.0a), OCRmyPDF (Phase 4.2), and voice-agent session orchestration (Phase 3.2). Reads/writes Postgres via `asyncpg` + `pgvector` adapter. Schema-of-record stays in Drizzle (`src/db/schema.ts`); Python never writes migrations.
+
+Repo layout shifts from single-root to:
+
+```
+apps/web/                    # existing Next.js app contents moved here
+services/agents/
+  pyproject.toml             # [tool.fastapi] entrypoint per fastapi skill
+  main.py
+  routers/, deps/, agents/, lib/
+vercel.json                  # experimentalServices: { web, agents }
+```
+
+Local dev: `vercel dev -L` runs both services on one port; `docker compose up -d` remains for Postgres.
+
+**Scope of "AI/ML plane" (Python):** all LLM calls (chat, outline, explain, auto-highlight tool-loops), all embedding calls, Chandra OCR, OCRmyPDF, voice-agent session orchestration. Non-LLM network calls (Semantic Scholar fetch in Phase 2.2; Zotero fetch in Phase 4.1) stay in Next.js.
+
+### 0.8 Internal auth contract (Next.js → FastAPI)
+
+Browser never talks to `/agents/*` directly. Every internal request from Next.js to FastAPI carries:
+
+```
+X-Inhale-User-Id: <better-auth user id>
+X-Inhale-Document-Id: <int, when applicable>
+X-Inhale-LLM-Key: <decrypted BYOK plaintext>
+X-Inhale-Ts: <unix seconds; request rejected if >60s old>
+X-Inhale-Sig: HMAC-SHA256 of (ts + method + path + body) using INHALE_INTERNAL_SECRET
+```
+
+FastAPI dependency `require_internal` verifies signature + freshness; 401 on failure. `INHALE_INTERNAL_SECRET` is a Vercel project env var, shared by both services. BYOK key decryption happens in Next.js only (Node `crypto` AES-256-GCM); Python never sees the AES secret.
 
 ---
 
@@ -97,28 +140,32 @@ ALTER TABLE user_highlights
 
 ---
 
-## 2. Phase 2.0.3 — LangChain / LangGraph Migration
+## 2. Phase 2.0.3 — Python agents service + framework migration
 
-**Goal:** swap LLM stack to LangChain JS. Zero user-visible feature change. All Phase 1 e2e tests green.
+**Goal:** stand up the Python FastAPI service, migrate every existing AI route onto it behind an unchanged browser-facing contract. Zero user-visible feature change. All Phase 1 e2e tests green.
 
-### 2.1 Kickoff ritual
-1. Invoke `langchain-skills:framework-selection`. Record primitive decisions inline in this spec section.
-2. Invoke `langchain-skills:langchain-dependencies` for installation.
-3. Consult `langchain-skills:langchain-rag` and `langchain-skills:langgraph-persistence` for the chat/explain routes.
+### 2.1 Kickoff ritual (mandatory; see §0.2)
+1. `langchain-skills:framework-selection` → record primitive decisions inline below.
+2. `fastapi` skill → conventions applied to all Python code.
+3. `langchain-skills:langchain-dependencies` → deps per framework.
+4. `langchain-skills:langchain-rag` + `langchain-skills:langgraph-persistence` → as relevant.
+5. Vercel Python runtime version confirmation per the Vercel Python docs at kickoff.
 
-### 2.2 Shape of change (primitive choices deferred to kickoff)
-- **LLM factory** (`src/lib/ai/llm.ts` — new). Returns a configured LangChain chat model wired to OpenRouter's OpenAI-compatible endpoint using the user's BYOK key (via existing `getDecryptedApiKey`).
-- **RAG tool** (`src/lib/ai/rag-tool.ts` — new). Wraps pgvector retrieval over `document_chunks` as a LangChain tool. Reused by all subsequent agentic features (2.1, 3.0b).
-- **Chat route** (`/api/documents/[id]/chat/route.ts`). Migrated to LangChain agent/graph with SSE streaming adapter. Request/response shape unchanged.
-- **Explain route** (`/api/ai/explain/route.ts`). Migrated. Single-shot stream.
-- **Outline route** (`/api/documents/[id]/outline/route.ts`). Kept for Phase 4.0 fallback only. Migrated to simple LangChain chat model invocation.
-- **Conversation persistence.** Use the persistence pattern selected by `langgraph-persistence` skill; back it with existing `agent_conversations` + `agent_messages` tables.
-- **Cleanup.** Remove `@openrouter/sdk` imports once call sites migrate. Delete `src/lib/ai/openrouter.ts`. Keep `src/lib/ai/embeddings.ts` (raw fetch; no LangChain benefit).
+### 2.2 Scope of change
+- **Repo restructure.** Move existing Next.js root into `apps/web/`. Add `services/agents/` scaffold. Add `vercel.json` with `experimentalServices` per §0.7.
+- **FastAPI scaffold.** Entrypoint `services/agents/main.py`; internal-auth dependency per §0.8; asyncpg pool dependency; health route. No agent logic yet.
+- **Embeddings moved to Python.** New `POST /agents/embed-chunks` consumes pre-chunked text and writes `document_chunks` rows with embeddings. Next.js upload route swaps its direct OpenRouter `fetch` for a signed call to this endpoint. `src/lib/ai/embeddings.ts` deleted. `src/lib/ai/chunking.ts` stays TS (pre-embedding text work; not an LLM call).
+- **Chat route** (`/api/documents/[id]/chat`). Becomes a thin proxy: session validate → BYOK decrypt → signed fetch to `/agents/chat` → SSE passthrough. Python-side implementation uses the framework chosen in §2.1 step 1.
+- **Outline route** (`/api/documents/[id]/outline`). Proxy → `/agents/outline`. Kept for Phase 4.0 fallback.
+- **Explain route** (`/api/ai/explain`). Proxy → `/agents/explain`.
+- **Conversation persistence.** Uses the pattern selected by `langchain-skills:langgraph-persistence` (or equivalent for the chosen framework), backed by existing `agent_conversations` + `agent_messages` tables via `asyncpg`.
+- **Cleanup.** Remove `@openrouter/sdk` and `src/lib/ai/openrouter.ts` once callers migrate. Delete `src/lib/ai/embeddings.ts`.
 
 ### 2.3 Tests
-- **Unit:** LLM factory (mocked provider); RAG tool (mocked retriever).
-- **Integration (Playwright, mocked routes):** existing Phase 1 tests (`e2e/ai-features.spec.ts`) pass unchanged. That's the primary acceptance signal.
-- **Chrome DevTools MCP e2e gate:** run the existing Phase 1 RAG chat + outline + explain flows manually; verify identical UX, no regressions, no console errors.
+- **Python unit:** OpenRouter client (mocked); framework-specific primitives (mocked); internal-auth dep.
+- **TS unit:** `signRequest` + `streamPassthrough` proxy helpers.
+- **Playwright (mocked routes):** existing `e2e/ai-features.spec.ts` passes unchanged. Primary acceptance signal.
+- **Chrome DevTools MCP e2e gate:** upload + chat flow end-to-end; SSE streams; reload preserves conversation; zero 4xx/5xx on `/api/*` or `/agents/*`; clean console.
 
 ---
 
@@ -386,13 +433,8 @@ On upload, if `unpdf` extraction yields ~0 text AND (if Chandra key present) Cha
 - **Chandra** — extracts text content + per-segment bounding boxes. Feeds `document_chunks` (for RAG/chat) and `document_segments` (for Smart Explanations). Uses existing two-tier pipeline.
 - **Classical OCR-PDF transformer** — working candidate `OCRmyPDF`. Produces a NEW PDF file with an embedded selectable text layer. Replaces the stored `documents.file_path` so the reader's native selection, `HighlightLayer`, and `Ctrl+F` search all just work on the OCR'd PDF without custom overlays.
 
-### 13.3 Deployment note (flagged for future discussion)
-`OCRmyPDF` is Python. Options to evaluate at implementation time:
-- Python sidecar service (mini FastAPI microservice invoked from Next.js).
-- `python -m ocrmypdf` subprocess call from the Next.js route (simpler; requires Python in deployment environment).
-- Alternative JS-native OCR-PDF transformer if one exists with comparable quality.
-
-Decision deferred to Phase 4.2 kickoff. Spec locks behavior, not mechanism.
+### 13.3 Deployment note
+OCRmyPDF runs inside `services/agents` (the Python FastAPI service from §0.7). Invocation mechanism (`ocrmypdf` Python API vs. `python -m ocrmypdf` subprocess), version pin, and long-job strategy (Vercel Services `maxDuration` up to 900s, or offload to Vercel Queues) are decided at Phase 4.2 kickoff per the OCRmyPDF project docs at https://ocrmypdf.readthedocs.io/en/latest/. Spec locks behavior, not mechanism.
 
 ### 13.4 UX
 Reader shows a banner on affected documents: "This paper appears to be image-only. Run AI Scan to make it readable?" → button triggers the pipeline. Progress shown; on completion, page reloads the OCR'd PDF transparently.
@@ -473,7 +515,7 @@ Numbering preserved for traceability. Sub-phase contents unchanged from existing
 
 These are intentionally unresolved in the spec; resolution happens at phase kickoff, not now.
 
-- **2.0.3:** exact LangChain primitives per route (from `langchain-skills:framework-selection`).
-- **3.0a:** Chandra API specifics, segment-kind enum (from `chandra-ocr` skill).
-- **3.2:** ElevenLabs API shapes (from ElevenLabs skills).
-- **4.2:** OCRmyPDF deployment mechanism (sidecar service vs. subprocess vs. JS alternative).
+- **2.0.3:** Python framework (LangGraph / LangChain / other) + primitives per route (from `langchain-skills:framework-selection`). Vercel Python runtime version (per Vercel Python docs at kickoff). FastAPI idioms (per `fastapi` skill).
+- **3.0a:** Chandra API specifics, segment-kind enum (from `chandra-ocr` skill). Chandra client runs inside `services/agents`.
+- **3.2:** ElevenLabs API shapes (from ElevenLabs skills). Voice session orchestration runs inside `services/agents`; browser WebSocket terminates on `/agents/voice`.
+- **4.2:** OCRmyPDF invocation mechanism, version pin, long-job strategy (per https://ocrmypdf.readthedocs.io/en/latest/ at kickoff).
