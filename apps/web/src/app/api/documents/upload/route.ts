@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { documents, documentChunks } from "@/db/schema";
+import { documents } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { saveFile } from "@/lib/storage";
 import { extractPdfPages } from "@/lib/ai/pdf-text";
 import { chunkPages } from "@/lib/ai/chunking";
-import { embedTexts, getDecryptedApiKey } from "@/lib/ai/embeddings";
+import { getDecryptedApiKey } from "@/lib/ai/embeddings";
+import { signRequest } from "@/lib/agents/sign-request";
 
 export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -49,32 +50,30 @@ export async function POST(request: NextRequest) {
         .where(eq(documents.id, doc.id));
     } else {
       const apiKey = await getDecryptedApiKey(session.user.id);
-
-      const BATCH = 64;
-      const embeddings: number[][] = [];
-      for (let i = 0; i < chunks.length; i += BATCH) {
-        const batch = chunks.slice(i, i + BATCH).map((c) => c.content);
-        const vecs = await embedTexts(apiKey, batch);
-        embeddings.push(...vecs);
-      }
-
-      if (embeddings.length !== chunks.length) {
-        throw new Error(
-          `Embedding count mismatch: got ${embeddings.length}, expected ${chunks.length}`
-        );
-      }
-
-      await db.insert(documentChunks).values(
-        chunks.map((c, i) => ({
-          documentId: doc.id,
+      const payload = JSON.stringify({
+        documentId: doc.id,
+        chunks: chunks.map((c) => ({
           chunkIndex: c.chunkIndex,
           content: c.content,
           pageStart: c.pageStart,
           pageEnd: c.pageEnd,
           tokenCount: c.tokenCount,
-          embedding: embeddings[i],
-        }))
-      );
+        })),
+      });
+      const { headers: agentHeaders } = signRequest({
+        method: "POST",
+        path: "/agents/embed-chunks",
+        body: payload,
+        userId: session.user.id,
+        documentId: doc.id,
+        llmKey: apiKey,
+      });
+      const agentRes = await fetch(`${process.env.AGENTS_URL}/agents/embed-chunks`, {
+        method: "POST",
+        headers: { ...agentHeaders, "Content-Type": "application/json" },
+        body: payload,
+      });
+      if (!agentRes.ok) throw new Error(`embed-chunks failed: ${agentRes.status}`);
 
       await db
         .update(documents)
