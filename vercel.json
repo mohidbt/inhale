@@ -1,0 +1,12 @@
+{
+  "experimentalServices": {
+    "web": {
+      "src": "apps/web",
+      "routePrefix": "/"
+    },
+    "agents": {
+      "src": "services/agents",
+      "routePrefix": "/agents"
+    }
+  }
+}
