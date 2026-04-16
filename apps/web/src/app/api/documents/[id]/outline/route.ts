@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { documents, documentSections } from "@/db/schema";
-import { and, asc, eq } from "drizzle-orm";
-import { getOpenRouterClient, MODELS } from "@/lib/ai/openrouter";
-import { extractPdfPages, type ExtractedPage } from "@/lib/ai/pdf-text";
+import { getDecryptedApiKey } from "@/lib/ai/openrouter";
+import { signRequest } from "@/lib/agents/sign-request";
 
 export async function GET(
   request: NextRequest,
@@ -12,93 +9,25 @@ export async function GET(
 ) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   const { id } = await params;
   const documentId = Number(id);
-  const userId = session.user.id; // string — do NOT cast to Number
 
-  const [doc] = await db
-    .select()
-    .from(documents)
-    .where(and(eq(documents.id, documentId), eq(documents.userId, userId)));
-  if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  let llmKey: string;
+  try { llmKey = await getDecryptedApiKey(session.user.id); }
+  catch { return NextResponse.json({ error: "Add an OpenRouter key in Settings" }, { status: 400 }); }
 
-  // Return cached sections if they exist
-  const existing = await db
-    .select()
-    .from(documentSections)
-    .where(eq(documentSections.documentId, documentId))
-    .orderBy(asc(documentSections.sectionIndex));
-  if (existing.length > 0) return NextResponse.json({ sections: existing });
-
-  // Generate via LLM
-  let client;
-  try {
-    client = await getOpenRouterClient(userId);
-  } catch {
-    return NextResponse.json({ error: "Add an OpenRouter key in Settings" }, { status: 400 });
-  }
-
-  let pages: ExtractedPage[];
-  try {
-    pages = await extractPdfPages(doc.filePath);
-  } catch (err) {
-    console.error("[outline] PDF extraction failed", err);
-    return NextResponse.json({ error: "Failed to read PDF" }, { status: 500 });
-  }
-  const sample = pages
-    .slice(0, 30)
-    .map((p) => `[Page ${p.pageNumber}]\n${p.text}`)
-    .join("\n\n");
-
-  const result = client.callModel({
-    model: MODELS.outline,
-    instructions:
-      'You are a research paper analyzer. Return a JSON array of sections. ' +
-      'Schema: [{"title": string, "page": number, "preview": string}]. ' +
-      'Use real page numbers from the [Page N] markers. Return ONLY the JSON array, no markdown.',
-    input: [{ role: "user", content: sample }],
+  const path = `/agents/outline?documentId=${documentId}`;
+  const { headers } = signRequest({
+    method: "GET",
+    path,
+    body: "",
+    userId: session.user.id,
+    documentId,
+    llmKey,
   });
-
-  let raw = "";
-  for await (const delta of result.getTextStream()) raw += delta;
-
-  const jsonText = raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/, "")
-    .trim();
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    return NextResponse.json({ error: "Model returned invalid JSON", raw }, { status: 502 });
-  }
-
-  if (!Array.isArray(parsed)) {
-    return NextResponse.json({ error: "Model returned non-array JSON", raw }, { status: 502 });
-  }
-  const valid = (parsed as { title?: unknown; page?: unknown; preview?: unknown }[]).filter(
-    (s) => typeof s.title === "string" && typeof s.page === "number"
-  ) as { title: string; page: number; preview?: string }[];
-  if (valid.length === 0) {
-    return NextResponse.json({ error: "Model returned no valid sections", raw }, { status: 502 });
-  }
-
-  const inserted = await db
-    .insert(documentSections)
-    .values(
-      valid.map((s, i) => ({
-        documentId,
-        sectionIndex: i,
-        title: s.title,
-        content: s.preview ?? "",
-        pageStart: s.page,
-        pageEnd: s.page, // LLM gives one page number; pageEnd = pageStart
-      }))
-    )
-    .returning();
-
-  return NextResponse.json({ sections: inserted });
+  const res = await fetch(`${process.env.AGENTS_URL}${path}`, { headers });
+  return new Response(res.body, {
+    status: res.status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
