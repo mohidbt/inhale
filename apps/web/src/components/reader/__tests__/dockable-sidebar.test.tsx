@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import { useSidebarDock, DockMenu, type Dock } from "../dockable-sidebar";
 
 function installMemoryStorage() {
@@ -26,6 +26,8 @@ function Harness({ id, defaultDock = "right" as Dock }: { id: string; defaultDoc
 }
 
 describe("useSidebarDock + DockMenu", () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     installMemoryStorage();
   });

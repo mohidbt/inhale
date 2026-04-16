@@ -13,7 +13,7 @@ import { extractAnnotationMarkers } from "../annotation-extractor";
 
 const FIXTURE_PATH = path.resolve(
   __dirname,
-  "../../../../../../e2e/fixtures/test_real_paper.pdf"
+  "../../../../e2e/fixtures/test_real_paper.pdf"
 );
 
 // Mock @/lib/storage so extractAnnotationMarkers can run without cloud storage.

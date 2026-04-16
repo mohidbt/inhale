@@ -1,8 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { OutlineSidebar } from "../outline-sidebar";
 
 describe("OutlineSidebar", () => {
+  afterEach(cleanup);
+
   it("always shows both Pages and Contents tabs", () => {
     const onNav = vi.fn();
     render(<OutlineSidebar totalPages={5} pdfOutline={null} onNavigate={onNav} />);
