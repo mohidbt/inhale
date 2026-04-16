@@ -23,6 +23,7 @@ interface ChatPanelProps {
   open: boolean;
   scrollContainerRef: React.RefObject<HTMLElement | null>;
   seed?: ChatSeed | null;
+  onClearSeed?: () => void;
   dockControl?: ReactNode;
   currentPage?: number;
   processingStatus?: DocProcessingStatus;
@@ -44,6 +45,7 @@ export function ChatPanel({
   open,
   scrollContainerRef,
   seed,
+  onClearSeed,
   dockControl,
   currentPage,
   processingStatus = "ready",
@@ -107,9 +109,6 @@ export function ChatPanel({
     if (historyOpen) fetchConversations();
   }, [historyOpen, fetchConversations, conversationId]);
 
-  useEffect(() => {
-    if (!open) setAttachedSelection(null);
-  }, [open]);
 
   const pageAvailable = currentPage != null;
 
@@ -146,19 +145,23 @@ export function ChatPanel({
       viewportRef.current ?? { page: currentPage ?? 1, scrollPct: 0 },
       sendOptions
     );
-    setAttachedSelection(null);
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const dismissChip = () => {
+    setAttachedSelection(null);
+    onClearSeed?.();
   };
 
   const handleLoad = async (id: number) => {
     await loadConversation(id);
-    setAttachedSelection(null);
+    dismissChip();
     setHistoryOpen(false);
   };
 
   const handleNew = () => {
     clearMessages();
-    setAttachedSelection(null);
+    dismissChip();
     setUiScope("paper");
     setHistoryOpen(false);
   };
@@ -284,7 +287,7 @@ export function ChatPanel({
             </div>
             <button
               type="button"
-              onClick={() => setAttachedSelection(null)}
+              onClick={dismissChip}
               aria-label="Remove highlighted context"
               className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >

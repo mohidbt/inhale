@@ -491,7 +491,12 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((o) => !o)}
         chatOpen={chatOpen}
-        onToggleChat={() => setChatOpen((o) => !o)}
+        onToggleChat={() => {
+          setChatOpen((o) => {
+            if (o) setChatSeed(null);
+            return !o;
+          });
+        }}
         outlineOpen={outlineOpen}
         onToggleOutline={() => setOutlineOpen((o) => !o)}
         citationsOpen={citationsOpen}
@@ -559,6 +564,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   open={chatOpen}
                   scrollContainerRef={pdfScrollRef}
                   seed={chatSeed}
+                  onClearSeed={() => setChatSeed(null)}
                   dockControl={<DockMenu dock={chatDock} onChange={setChatDock} />}
                   currentPage={currentPage}
                   processingStatus={processingStatus}
