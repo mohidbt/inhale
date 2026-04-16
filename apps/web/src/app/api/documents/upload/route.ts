@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { saveFile } from "@/lib/storage";
 import { extractPdfPages } from "@/lib/ai/pdf-text";
 import { chunkPages } from "@/lib/ai/chunking";
-import { getDecryptedApiKey } from "@/lib/ai/embeddings";
+import { getDecryptedApiKey } from "@/lib/byok";
 import { signRequest } from "@/lib/agents/sign-request";
 
 export async function POST(request: NextRequest) {

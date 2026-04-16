@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { getDecryptedApiKey } from "@/lib/ai/openrouter";
+import { getDecryptedApiKey } from "@/lib/byok";
 import { signRequest } from "@/lib/agents/sign-request";
 import { streamPassthrough } from "@/lib/agents/stream-passthrough";
 
