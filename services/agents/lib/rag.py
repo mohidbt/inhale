@@ -34,7 +34,6 @@ async def retrieve(conn, *, document_id: int, question: str, scope: str,
 
     vecs = await embed_texts(api_key, [embedding_query])
     query_vec = vecs[0]
-    vec_literal = "[" + ",".join(str(v) for v in query_vec) + "]"
 
     supporting_chunks: list[ChunkRow] = []
     page_text: str | None = None
@@ -60,7 +59,7 @@ async def retrieve(conn, *, document_id: int, question: str, scope: str,
             "FROM document_chunks "
             "WHERE document_id = $1 AND embedding IS NOT NULL "
             "ORDER BY score DESC LIMIT 4",
-            document_id, vec_literal,
+            document_id, query_vec,
         )
         supporting_chunks = [ChunkRow(r["id"], r["content"], r["page_start"], r["page_end"], float(r["score"])) for r in rows]
     else:
@@ -71,7 +70,7 @@ async def retrieve(conn, *, document_id: int, question: str, scope: str,
             "FROM document_chunks "
             "WHERE document_id = $1 AND embedding IS NOT NULL "
             "ORDER BY score DESC LIMIT 20",
-            document_id, vec_literal,
+            document_id, query_vec,
         )
         top_k = [ChunkRow(r["id"], r["content"], r["page_start"], r["page_end"], float(r["score"])) for r in rows]
 
