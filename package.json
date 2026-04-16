@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix apps/web",
+    "build": "npm run build --prefix apps/web",
+    "start": "npm run start --prefix apps/web",
+    "test": "npm run test --prefix apps/web",
+    "lint": "npm run lint --prefix apps/web",
+    "db:generate": "npm run db:generate --prefix apps/web",
+    "db:migrate": "npm run db:migrate --prefix apps/web",
+    "db:studio": "npm run db:studio --prefix apps/web"
+  }
+}
