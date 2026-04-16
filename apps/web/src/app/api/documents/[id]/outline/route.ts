@@ -25,7 +25,7 @@ export async function GET(
     documentId,
     llmKey,
   });
-  const res = await fetch(`${process.env.AGENTS_URL}${path}`, { headers });
+  const res = await fetch(`${process.env.AGENTS_URL}${path}`, { headers: { ...headers } });
   return new Response(res.body, {
     status: res.status,
     headers: { "Content-Type": "application/json" },
