@@ -48,6 +48,7 @@ export function ReferenceCard(props: ReferenceCardProps) {
           size="sm"
           onClick={() => setConfirmOpen(true)}
           data-testid={`reference-remove-${props.id}`}
+          aria-label={`Remove ${props.title}`}
         >
           Remove
         </Button>
