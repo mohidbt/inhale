@@ -69,4 +69,25 @@ describe("formatBibtex", () => {
     });
     expect(result).not.toContain("year = ");
   });
+
+  it("non-ASCII author name: entry key uses ASCII-only slug (ü → u)", () => {
+    const result = formatBibtex({
+      title: "Some Paper",
+      authors: [{ name: "Hans Müller" }],
+      year: 2024,
+    });
+    expect(result).toMatch(/^@article\{muller2024/i);
+    // Entry key must not contain the raw non-ASCII character
+    expect(result.split("\n")[0]).not.toContain("ü");
+  });
+
+  it("backslash in title: escaped as textbackslash in BibTeX output", () => {
+    const result = formatBibtex({
+      title: "Back\\slash",
+      authors: [{ name: "Jane Doe" }],
+      year: 2023,
+    });
+    // Implementation escapes \ → \textbackslash{} (braces are then further escaped)
+    expect(result).toContain("textbackslash");
+  });
 });

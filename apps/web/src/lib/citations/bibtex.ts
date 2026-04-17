@@ -28,14 +28,21 @@ function escape(str: string): string {
   return s;
 }
 
+function toAsciiKeyPart(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
 function buildEntryKey(input: BibtexInput): string {
-  const lastName = input.authors?.[0]?.name?.split(" ").pop()?.toLowerCase() ?? "";
+  const lastName = toAsciiKeyPart(
+    input.authors?.[0]?.name?.split(" ").pop()?.toLowerCase() ?? ""
+  );
   const yearPart = input.year ? String(input.year) : "";
-  const titleWord = input.title
-    ?.trim()
-    .split(/\s+/)[0]
-    ?.toLowerCase()
-    .replace(/[^a-z0-9]/g, "") ?? "";
+  const titleWord = toAsciiKeyPart(
+    input.title?.trim().split(/\s+/)[0]?.toLowerCase() ?? ""
+  );
   if (lastName || yearPart || titleWord) {
     return `${lastName}${yearPart}${titleWord}`;
   }

@@ -63,14 +63,15 @@ export function CitationCard({
   // Dismiss on click outside or Escape key (popover mode only)
   useEffect(() => {
     if (!isPopover || !onDismiss) return;
+    const dismiss = onDismiss;
 
     function handleMouseDown(e: MouseEvent) {
       if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
-        onDismiss!();
+        dismiss();
       }
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onDismiss!();
+      if (e.key === "Escape") dismiss();
     }
     document.addEventListener("mousedown", handleMouseDown);
     document.addEventListener("keydown", handleKeyDown);
@@ -144,7 +145,7 @@ export function CitationCard({
   // Render
   // ---------------------------------------------------------------------------
 
-  const cardContent = (
+  return (
     <div
       ref={cardRef}
       role={isPopover ? "dialog" : undefined}
@@ -354,6 +355,4 @@ export function CitationCard({
       </div>
     </div>
   );
-
-  return cardContent;
 }

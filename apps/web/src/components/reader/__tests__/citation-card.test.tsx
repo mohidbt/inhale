@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { CitationCard, type CitationWithStatus } from "../citation-card";
 
 // ---------------------------------------------------------------------------
@@ -200,8 +200,10 @@ describe("CitationCard Copy BibTeX", () => {
       />
     );
     fireEvent.click(screen.getByRole("button", { name: /copy bibtex/i }));
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "@article{test2022, title={Test}}"
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        "@article{test2022, title={Test}}"
+      )
     );
   });
 
@@ -214,7 +216,7 @@ describe("CitationCard Copy BibTeX", () => {
       />
     );
     fireEvent.click(screen.getByRole("button", { name: /copy bibtex/i }));
-    expect(navigator.clipboard.writeText).toHaveBeenCalled();
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalled());
     const calledWith = (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(calledWith).toMatch(/^@article\{/);
   });
@@ -260,6 +262,32 @@ describe("CitationCard abstract collapse", () => {
     expect(showMore).toBeDefined();
     fireEvent.click(showMore);
     expect(screen.getByRole("button", { name: /show less/i })).toBeDefined();
+  });
+});
+
+describe("CitationCard TL;DR", () => {
+  it("renders italic TL;DR paragraph when tldrText is present", () => {
+    render(
+      <CitationCard
+        citation={makeCitation({ tldrText: "A short summary of the paper." })}
+        rect={baseRect}
+        onDismiss={noop}
+      />
+    );
+    const tldr = screen.getByText("A short summary of the paper.");
+    expect(tldr).toBeDefined();
+    expect(tldr.className).toMatch(/italic/);
+  });
+
+  it("does not render TL;DR element when tldrText is null", () => {
+    render(
+      <CitationCard
+        citation={makeCitation({ tldrText: null })}
+        rect={baseRect}
+        onDismiss={noop}
+      />
+    );
+    expect(screen.queryByText(/short summary/i)).toBeNull();
   });
 });
 
