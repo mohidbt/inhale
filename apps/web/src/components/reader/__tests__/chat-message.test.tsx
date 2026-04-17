@@ -47,6 +47,32 @@ describe("ChatMessage — Review highlights button", () => {
     expect(screen.queryByRole("button", { name: /review highlights/i })).toBeNull();
   });
 
+  it("renders button for regular chat assistant reply (kind undefined) with runId + count > 0", () => {
+    render(
+      <ChatMessage
+        role="assistant"
+        content="Here's what I found."
+        runId="abc"
+        highlightsCount={3}
+        onReviewHighlights={() => {}}
+      />
+    );
+    expect(screen.getByRole("button", { name: /review highlights/i })).toBeTruthy();
+  });
+
+  it("does not render button for regular chat assistant reply when highlightsCount is 0", () => {
+    render(
+      <ChatMessage
+        role="assistant"
+        content="Here's what I found."
+        runId="abc"
+        highlightsCount={0}
+        onReviewHighlights={() => {}}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /review highlights/i })).toBeNull();
+  });
+
   it("calls onReviewHighlights with runId on click", () => {
     const onReview = vi.fn();
     render(

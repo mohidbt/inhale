@@ -28,7 +28,7 @@ export function ChatMessage({
   const isProgress = kind === "auto-highlight-progress";
   const isResult = kind === "auto-highlight-result";
   const showReview =
-    isResult &&
+    role === "assistant" &&
     !!runId &&
     typeof highlightsCount === "number" &&
     highlightsCount > 0 &&
