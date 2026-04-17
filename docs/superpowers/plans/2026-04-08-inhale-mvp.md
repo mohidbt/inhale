@@ -31,7 +31,7 @@
 | 2.0.3 — Python agents service + framework migration | DONE | [phases/phase-2.0.3-langchain.md](phases/phase-2.0.3-langchain.md) |
 | **2.1 — AI Auto-Highlight** | **NEXT** | [phases/phase-2.1-auto-highlight.md](phases/phase-2.1-auto-highlight.md) |
 | 2.2 — Enriched Smart Citations | Pending | [phases/phase-2.2-citations-enriched.md](phases/phase-2.2-citations-enriched.md) |
-| 2.3 — Library Management (lite) | Pending | [phases/phase-2.3-library-lite.md](phases/phase-2.3-library-lite.md) |
+| 2.3 — Library Management (lite) | DONE | [phases/phase-2.3-library-lite.md](phases/phase-2.3-library-lite.md) |
 | 3.0a — Smart Explanation detection + icons | Pending | [phases/phase-3.0a-explain-detection.md](phases/phase-3.0a-explain-detection.md) |
 | 3.0b — Smart Explanation agent + history | Pending | [phases/phase-3.0b-explain-agent.md](phases/phase-3.0b-explain-agent.md) |
 | 3.1 — External Links & Deep References | Pending | [phases/phase-3.1-external-links.md](phases/phase-3.1-external-links.md) |
