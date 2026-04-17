@@ -199,8 +199,17 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
     runs: aiRuns,
     hiddenRunIds,
     toggleRun,
+    ensureVisible: ensureRunVisible,
     deleteRun,
   } = useAIHighlightRuns(documentId, refreshKey);
+
+  const handleReviewRun = useCallback(
+    (runId: string) => {
+      ensureRunVisible(runId);
+      setSidebarOpen(true);
+    },
+    [ensureRunVisible]
+  );
 
   useEffect(() => {
     setCitationsLoading(true);
@@ -585,6 +594,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   currentPage={currentPage}
                   processingStatus={processingStatus}
                   onHighlightsChanged={() => setRefreshKey((k) => k + 1)}
+                  onReviewRun={handleReviewRun}
                 />
               ),
             });

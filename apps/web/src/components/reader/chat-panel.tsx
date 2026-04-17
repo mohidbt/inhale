@@ -30,6 +30,10 @@ interface ChatPanelProps {
   processingStatus?: DocProcessingStatus;
   // Called after /highlight finishes so the parent can refetch highlights.
   onHighlightsChanged?: () => void;
+  // Called when the user clicks the "Review highlights" button in an
+  // auto-highlight result message. Parent opens the Highlights sidebar and
+  // ensures the run's overlays are visible.
+  onReviewRun?: (runId: string) => void;
 }
 
 interface ConversationListItem {
@@ -53,6 +57,7 @@ export function ChatPanel({
   currentPage,
   processingStatus = "ready",
   onHighlightsChanged,
+  onReviewRun,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -340,6 +345,8 @@ export function ChatPanel({
               kind={msg.kind}
               progressSteps={msg.progressSteps}
               highlightsCount={msg.highlightsCount}
+              runId={msg.runId}
+              onReviewHighlights={onReviewRun}
               isStreaming={isStreaming}
             />
           );

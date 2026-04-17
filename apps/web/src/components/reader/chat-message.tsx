@@ -10,6 +10,8 @@ interface ChatMessageProps {
   kind?: ChatMessageKind;
   progressSteps?: string[];
   highlightsCount?: number;
+  runId?: string;
+  onReviewHighlights?: (runId: string) => void;
 }
 
 export function ChatMessage({
@@ -20,9 +22,17 @@ export function ChatMessage({
   kind = "chat",
   progressSteps,
   highlightsCount,
+  runId,
+  onReviewHighlights,
 }: ChatMessageProps) {
   const isProgress = kind === "auto-highlight-progress";
   const isResult = kind === "auto-highlight-result";
+  const showReview =
+    isResult &&
+    !!runId &&
+    typeof highlightsCount === "number" &&
+    highlightsCount > 0 &&
+    !!onReviewHighlights;
   return (
     <div className={`flex ${role === "user" ? "justify-end" : "justify-start"} mb-3`}>
       <div
@@ -67,6 +77,15 @@ export function ChatMessage({
             )}
             <p className="whitespace-pre-wrap">{content}</p>
             {isStreaming && <span className="animate-pulse">▋</span>}
+            {showReview && (
+              <button
+                type="button"
+                onClick={() => onReviewHighlights!(runId!)}
+                className="mt-1.5 inline-flex items-center rounded border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted"
+              >
+                Review highlights
+              </button>
+            )}
           </>
         )}
       </div>

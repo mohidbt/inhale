@@ -18,6 +18,7 @@ interface Result {
   error: string | null;
   hiddenRunIds: Set<string>;
   toggleRun: (runId: string) => void;
+  ensureVisible: (runId: string) => void;
   deleteRun: (runId: string, onChanged?: () => void) => Promise<void>;
   refetch: () => Promise<void>;
 }
@@ -67,6 +68,17 @@ export function useAIHighlightRuns(documentId: number, refreshKey: number = 0): 
     });
   }, []);
 
+  // Remove runId from hidden set if present; no-op otherwise. Used when the
+  // user clicks "Review highlights" to defensively un-hide the run's overlays.
+  const ensureVisible = useCallback((runId: string) => {
+    setHiddenRunIds((prev) => {
+      if (!prev.has(runId)) return prev;
+      const next = new Set(prev);
+      next.delete(runId);
+      return next;
+    });
+  }, []);
+
   const deleteRun = useCallback(
     async (runId: string, onChanged?: () => void) => {
       try {
@@ -92,5 +104,5 @@ export function useAIHighlightRuns(documentId: number, refreshKey: number = 0): 
 
   const refetch = useCallback(() => fetchRuns(), [fetchRuns]);
 
-  return { runs, loading, error, hiddenRunIds, toggleRun, deleteRun, refetch };
+  return { runs, loading, error, hiddenRunIds, toggleRun, ensureVisible, deleteRun, refetch };
 }
