@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { documents, documentReferences, libraryReferences, keptCitations } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { buildLibraryReference } from "@/lib/citations/library-sync";
 
 export async function POST(
@@ -62,6 +62,7 @@ export async function POST(
         .values(payload)
         .onConflictDoUpdate({
           target: [libraryReferences.userId, libraryReferences.doi],
+          targetWhere: sql`${libraryReferences.doi} IS NOT NULL`,
           set: {
             // Refresh metadata in case the citation was re-enriched since the
             // original save. updatedAt is bumped automatically by $onUpdate.
