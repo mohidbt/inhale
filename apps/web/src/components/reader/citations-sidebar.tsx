@@ -1,12 +1,9 @@
 "use client";
 
-import { useState, useCallback, type ReactNode } from "react";
+import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import type { CitationWithStatus } from "@/components/reader/citation-card";
-import { authorsToDisplay } from "@/lib/citations/author-utils";
-
-// Strip leading "[n] " or "n. " marker prefix that parseBibLines stores in rawText.
-const MARKER_PREFIX_RE = /^(?:\[\d{1,3}\]\s+|\d{1,3}\.\s+)/;
+import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
+import { toast } from "sonner";
 
 interface CitationsSidebarProps {
   documentId: number;
@@ -19,6 +16,34 @@ interface CitationsSidebarProps {
 
 export function CitationsSidebar({ documentId, open, citations, loading, onExtracted, dockControl }: CitationsSidebarProps) {
   const [extracting, setExtracting] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const enrichFiredRef = useRef(false);
+
+  // Auto-enrich once per session open when any ref lacks semanticScholarId
+  useEffect(() => {
+    if (!open || loading || enrichFiredRef.current) return;
+    if (citations.length === 0) return;
+    if (!citations.some((r) => !r.semanticScholarId)) return;
+
+    enrichFiredRef.current = true;
+    setEnriching(true);
+
+    fetch(`/api/documents/${documentId}/citations/enrich`, { method: "POST" })
+      .then((res) => {
+        if (!res.ok) throw new Error(`enrich failed: ${res.status}`);
+        return res.json();
+      })
+      .then(() => {
+        onExtracted?.();
+      })
+      .catch((err) => {
+        console.error("[citations-sidebar] enrich error", err);
+        toast.error("Enrichment failed. Citations shown with available data.");
+      })
+      .finally(() => {
+        setEnriching(false);
+      });
+  }, [open, loading, citations, documentId, onExtracted]);
 
   const handleExtract = useCallback(async () => {
     setExtracting(true);
@@ -38,6 +63,12 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
         <h2 className="truncate text-sm font-semibold">Citations</h2>
         {dockControl}
       </div>
+      {enriching && (
+        <div className="flex items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
+          <div className="h-3 w-3 animate-spin rounded-full border border-muted-foreground border-t-transparent" />
+          Enriching from Semantic Scholar…
+        </div>
+      )}
       <div className="flex-1 overflow-auto p-4">
         {loading && (
           <div className="flex items-center gap-2">
@@ -87,32 +118,9 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
         )}
         {!loading && citations.length > 0 && (
           <div className="space-y-2">
-            {citations.map((c) => {
-              // Prefer structured fields: authors (year) is clean even when rawText is
-              // garbled by two-column PDF layouts interleaving bibliography with body text.
-              // Fall back to a hard-capped rawText (120 chars) to avoid showing junk, then
-              // title, then markerText.
-              const authorStr = authorsToDisplay(c.authors);
-              const structuredLabel =
-                authorStr && c.year
-                  ? `${authorStr} (${c.year})`
-                  : authorStr ?? null;
-              const rawLabel = c.rawText
-                ? c.rawText.replace(MARKER_PREFIX_RE, "").trim().slice(0, 120)
-                : null;
-              const label = structuredLabel ?? rawLabel ?? c.title ?? c.markerText;
-              return (
-                <div
-                  key={c.id}
-                  className="rounded border px-3 py-2 text-xs leading-relaxed"
-                >
-                  <span className="mr-2 font-mono text-muted-foreground">
-                    [{c.markerIndex}]
-                  </span>
-                  <span className="line-clamp-2">{label}</span>
-                </div>
-              );
-            })}
+            {citations.map((c) => (
+              <CitationCard key={c.id} citation={c} variant="compact" />
+            ))}
           </div>
         )}
       </div>
