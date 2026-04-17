@@ -1,8 +1,7 @@
 import { pgTable, text, timestamp, serial, integer, index, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { user } from "./auth";
-
-type Author = { name: string; authorId?: string };
+import type { Author } from "@/lib/citations/author-utils";
 
 export const libraryReferences = pgTable("library_references", {
   id: serial("id").primaryKey(),
