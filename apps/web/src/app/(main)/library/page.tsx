@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
@@ -48,7 +49,9 @@ export default async function LibraryPage({
 
       <UploadZone />
 
-      <LibraryToolbar sort={sort} q={q} />
+      <Suspense fallback={null}>
+        <LibraryToolbar sort={sort} q={q} />
+      </Suspense>
 
       {docs.length === 0 ? (
         <div className="mt-12 text-center text-muted-foreground">
