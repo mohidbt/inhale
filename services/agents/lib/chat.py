@@ -40,10 +40,13 @@ async def run_chat(*, api_key: str, history: list[dict], question: str,
                    supporting_chunks: list[ChunkRow], page_text: str | None,
                    anchor_text: str | None, selection_text: str | None,
                    scope: str, focus_page: int | None,
-                   tools: list | None = None) -> AsyncIterator[tuple]:
+                   tools: list | None = None,
+                   tool_hints: list[str] | None = None) -> AsyncIterator[tuple]:
     """Yield ('token', str) for LLM text, ('tool_call', name, args), ('tool_result', name, result)."""
     model = ChatOpenAI(model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key, streaming=True)
     system = _build_system_prompt(supporting_chunks, page_text, anchor_text, selection_text, scope, focus_page)
+    if tool_hints:
+        system = system + "\n\n" + "\n\n".join(tool_hints)
 
     messages: list[Any] = [{"role": "system", "content": system}]
     messages.extend(history[-10:])

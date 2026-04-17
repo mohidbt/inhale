@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from deps.auth import InternalAuthDep
 from deps.db import ConnDep
-from lib.auto_highlight_tools import build_tools
+from lib.auto_highlight_tools import TOOLBELT_SYSTEM_HINT, build_tools
 from lib.chat import CHAT_MODEL, OPENROUTER_BASE
 from lib.conversations import bump_updated_at, insert_message
 
@@ -23,13 +23,7 @@ AGENT_RECURSION_LIMIT = 25  # max tool-call depth before agent aborts
 
 SYSTEM_PROMPT = (
     "You create highlights on a single PDF based on the user's instruction.\n"
-    "Workflow:\n"
-    "1. Call `semantic_search` to find candidate passages matching the instruction.\n"
-    "2. For each promising passage, call `page_text` to read surrounding context,\n"
-    "   then `locate_phrase` to get exact character offsets and rects.\n"
-    "3. Call `create_highlights` with the matches (batched). Max 50 highlights total.\n"
-    "4. When done, call `finish` with a concise 1-2 sentence summary for the user.\n"
-    "Only call `finish` once. Do not repeat highlights already created."
+    + TOOLBELT_SYSTEM_HINT
 )
 
 

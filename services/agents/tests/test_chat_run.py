@@ -74,6 +74,63 @@ async def test_run_chat_emits_tool_call_and_result():
 
 
 @pytest.mark.asyncio
+async def test_run_chat_includes_tool_hints_in_system_prompt():
+    """When tool_hints is passed, the first (system) message should contain the hint text."""
+    captured: dict = {}
+
+    fake = MagicMock()
+
+    async def astream(input_, config=None, *, stream_mode=None, **kwargs):
+        captured["messages"] = input_.get("messages", [])
+        return
+        yield  # pragma: no cover — make it an async generator
+
+    fake.astream = astream
+
+    with patch("lib.chat.create_agent", return_value=fake):
+        async for _ in run_chat(
+            api_key="sk-test", history=[], question="hi",
+            supporting_chunks=[], page_text=None, anchor_text=None,
+            selection_text=None, scope="paper", focus_page=None, tools=[],
+            tool_hints=["HINT_TEXT_SENTINEL"],
+        ):
+            pass
+
+    assert captured["messages"], "expected at least one message"
+    system_msg = captured["messages"][0]
+    assert system_msg["role"] == "system"
+    assert "HINT_TEXT_SENTINEL" in system_msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_run_chat_without_tool_hints_omits_hint_text():
+    """When tool_hints is None, no hint text appears in the system prompt."""
+    captured: dict = {}
+
+    fake = MagicMock()
+
+    async def astream(input_, config=None, *, stream_mode=None, **kwargs):
+        captured["messages"] = input_.get("messages", [])
+        return
+        yield  # pragma: no cover
+
+    fake.astream = astream
+
+    with patch("lib.chat.create_agent", return_value=fake):
+        async for _ in run_chat(
+            api_key="sk-test", history=[], question="hi",
+            supporting_chunks=[], page_text=None, anchor_text=None,
+            selection_text=None, scope="paper", focus_page=None, tools=[],
+            tool_hints=None,
+        ):
+            pass
+
+    system_msg = captured["messages"][0]
+    assert system_msg["role"] == "system"
+    assert "HINT_TEXT_SENTINEL" not in system_msg["content"]
+
+
+@pytest.mark.asyncio
 async def test_run_chat_skips_list_content_chunks():
     """AIMessageChunk.content can be a list (e.g. tool-call blocks); must not yield as token."""
     from langchain_core.messages import AIMessageChunk

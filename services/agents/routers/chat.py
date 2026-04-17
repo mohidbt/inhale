@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from deps.auth import InternalAuthDep
 from deps.db import ConnDep
-from lib.auto_highlight_tools import build_tools
+from lib.auto_highlight_tools import TOOLBELT_SYSTEM_HINT, build_tools
 from lib.conversations import upsert_conversation, insert_message, bump_updated_at
 from lib.rag import retrieve
 from lib.chat import CHAT_MODEL, run_chat
@@ -187,6 +187,7 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
                 page_text=retrieval.page_text, anchor_text=retrieval.anchor_text,
                 selection_text=selection_text, scope=scope, focus_page=focus_page,
                 tools=highlight_tools,
+                tool_hints=[TOOLBELT_SYSTEM_HINT],
             ):
                 kind = event[0]
                 if kind == "token":

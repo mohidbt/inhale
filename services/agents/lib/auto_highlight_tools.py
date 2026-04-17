@@ -13,6 +13,16 @@ from lib.openrouter_client import embed_texts
 MAX_HIGHLIGHTS_PER_RUN = 50
 MAX_LOCATE_HITS = 20
 
+TOOLBELT_SYSTEM_HINT = (
+    "When the user explicitly asks to highlight / mark / annotate passages, use the highlight toolset:\n"
+    "  1. `semantic_search` to find candidate passages.\n"
+    "  2. `page_text` for context + `locate_phrase` for exact offsets and rects.\n"
+    "  3. `create_highlights` with the batch of matches (map locate_phrase results to "
+    "`{page_number, text_content, start_offset, end_offset, rects}`). This is the commit step.\n"
+    "  4. `finish` with a 1-2 sentence summary.\n"
+    "Cap: 50 highlights per run. Do not repeat highlights. Call `finish` exactly once."
+)
+
 
 def build_tools(
     conn,
