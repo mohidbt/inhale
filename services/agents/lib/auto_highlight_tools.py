@@ -39,7 +39,9 @@ def build_tools(
             "FROM document_chunks "
             "WHERE document_id = $1 AND embedding IS NOT NULL "
             "ORDER BY score DESC LIMIT $3",
-            document_id, vecs[0], top_k,
+            document_id,
+            vecs[0],
+            top_k,
         )
         return [
             {
@@ -61,6 +63,7 @@ def build_tools(
         `{error}` if the page is out of range. Use this to read the full
         context around a candidate passage before calling `locate_phrase`.
         """
+
         def _load():
             reader = PdfReader(pdf_path)
             if page_number < 1 or page_number > len(reader.pages):
@@ -95,12 +98,14 @@ def build_tools(
         results = []
         for start, end in hits[:MAX_LOCATE_HITS]:
             rect = _rect_for_span(fragments, start, end, page_number)
-            results.append({
-                "start_offset": start,
-                "end_offset": end,
-                "text": text[start:end],
-                "rects": [rect] if rect else [],
-            })
+            results.append(
+                {
+                    "start_offset": start,
+                    "end_offset": end,
+                    "text": text[start:end],
+                    "rects": [rect] if rect else [],
+                }
+            )
         return results
 
     @tool
@@ -119,8 +124,11 @@ def build_tools(
         )
         existing = int(existing or 0)
         remaining = MAX_HIGHLIGHTS_PER_RUN - existing
-        to_insert = matches[:max(0, remaining)]
-        capped = len(to_insert) < len(matches) or (existing + len(to_insert)) >= MAX_HIGHLIGHTS_PER_RUN
+        to_insert = matches[: max(0, remaining)]
+        capped = (
+            len(to_insert) < len(matches)
+            or (existing + len(to_insert)) >= MAX_HIGHLIGHTS_PER_RUN
+        )
 
         for m in to_insert:
             rects_json = json.dumps(m.get("rects", []))
@@ -129,9 +137,16 @@ def build_tools(
                 "(user_id, document_id, page_number, text_content, start_offset, "
                 "end_offset, color, source, layer_id, rects) "
                 "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid, $10::jsonb)",
-                user_id, document_id, m["page_number"], m["text_content"],
-                m["start_offset"], m["end_offset"],
-                "amber", "ai-auto", run_id, rects_json,
+                user_id,
+                document_id,
+                m["page_number"],
+                m["text_content"],
+                m["start_offset"],
+                m["end_offset"],
+                "amber",
+                "ai-auto",
+                run_id,
+                rects_json,
             )
 
         total = existing + len(to_insert)
@@ -149,6 +164,7 @@ def build_tools(
 
 
 # ----- helpers ---------------------------------------------------------------
+
 
 def _extract_with_positions(pdf_path: str, page_number: int):
     """Return (full_text, fragments). Each fragment: (text, char_start, x, y, font_size).
@@ -171,7 +187,9 @@ def _extract_with_positions(pdf_path: str, page_number: int):
             return
         # pypdf passes the operand text with trailing "\n" for line breaks,
         # which matches what extract_text() assembles. We mirror that layout.
-        fragments.append((text, cursor, float(tm[4]), float(tm[5]), float(font_size or 10.0)))
+        fragments.append(
+            (text, cursor, float(tm[4]), float(tm[5]), float(font_size or 10.0))
+        )
         parts.append(text)
         cursor += len(text)
 
@@ -186,7 +204,9 @@ def _find_exact(text: str, phrase: str) -> list[tuple[int, int]]:
     return [(m.start(), m.end()) for m in pattern.finditer(text)]
 
 
-def _find_fuzzy(text: str, phrase: str, threshold: float = 0.82) -> list[tuple[int, int]]:
+def _find_fuzzy(
+    text: str, phrase: str, threshold: float = 0.82
+) -> list[tuple[int, int]]:
     """Simple fuzzy: slide a word-window of phrase length over text, keep spans
     whose SequenceMatcher ratio exceeds `threshold`. Deduped + non-overlapping.
     """
@@ -208,17 +228,14 @@ def _rect_for_span(fragments, start: int, end: int, page_number: int) -> dict | 
     `start` to the last fragment that overlaps `end`. Width is approximated
     from font_size × chars since pypdf doesn't expose glyph widths here.
     """
-    overlapping = [
-        f for f in fragments
-        if f[1] < end and (f[1] + len(f[0])) > start
-    ]
+    overlapping = [f for f in fragments if f[1] < end and (f[1] + len(f[0])) > start]
     if not overlapping:
         return None
     first = overlapping[0]
     last = overlapping[-1]
     # Approximate char width as 0.5 * font_size (serif/typical ratio).
-    first_text, first_cur, fx, fy, fsz = first
-    last_text, last_cur, lx, ly, lsz = last
+    _, first_cur, fx, fy, fsz = first
+    _, last_cur, lx, ly, lsz = last
     offset_into_first = max(0, start - first_cur)
     x0 = fx + offset_into_first * fsz * 0.5
     # Upper y-edge: line baseline + font size (PDF origin is bottom-left).

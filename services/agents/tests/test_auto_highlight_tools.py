@@ -1,30 +1,20 @@
 import os
+from pathlib import Path
+
 os.environ.setdefault("INHALE_INTERNAL_SECRET", "test-secret-abc")
 os.environ["INHALE_STUB_EMBEDDINGS"] = "1"
 
 from unittest.mock import AsyncMock, patch
 import pytest
 
+from lib import auto_highlight_tools
 from lib.auto_highlight_tools import build_tools
 
 
 RUN_ID = "11111111-1111-1111-1111-111111111111"
 USER_ID = "user_1"
 DOC_ID = 42
-PDF_PATH = "/Users/mohidbutt/Documents/Claudius/inhale/.claude/worktrees/phase-2.1-auto-highlight/apps/web/e2e/fixtures/test.pdf"
-
-
-def _make_conn(fetch=None, fetchrow=None, fetchval=None, execute=None):
-    conn = AsyncMock()
-    if fetch is not None:
-        conn.fetch.side_effect = fetch if callable(fetch) else lambda *a, **k: fetch
-    if fetchrow is not None:
-        conn.fetchrow.side_effect = fetchrow if callable(fetchrow) else lambda *a, **k: fetchrow
-    if fetchval is not None:
-        conn.fetchval.side_effect = fetchval if callable(fetchval) else lambda *a, **k: fetchval
-    if execute is not None:
-        conn.execute.side_effect = execute
-    return conn
+PDF_PATH = str(Path(__file__).resolve().parents[3] / "apps/web/e2e/fixtures/test.pdf")
 
 
 def _get_tool(tools, name):
@@ -34,10 +24,23 @@ def _get_tool(tools, name):
 @pytest.mark.asyncio
 async def test_semantic_search_returns_shape_and_filters_by_document():
     rows = [
-        {"id": 7, "page_start": 3, "page_end": 3, "content": "loss function defined", "score": 0.91},
-        {"id": 9, "page_start": 5, "page_end": 5, "content": "we minimize", "score": 0.77},
+        {
+            "id": 7,
+            "page_start": 3,
+            "page_end": 3,
+            "content": "loss function defined",
+            "score": 0.91,
+        },
+        {
+            "id": 9,
+            "page_start": 5,
+            "page_end": 5,
+            "content": "we minimize",
+            "score": 0.77,
+        },
     ]
     seen_args = []
+
     async def fetch(query, *args):
         seen_args.append((query, args))
         return rows
@@ -51,8 +54,12 @@ async def test_semantic_search_returns_shape_and_filters_by_document():
 
     assert len(result) == 2
     assert result[0] == {
-        "chunk_id": 7, "page": 3, "page_start": 3, "page_end": 3,
-        "content": "loss function defined", "score": 0.91,
+        "chunk_id": 7,
+        "page": 3,
+        "page_start": 3,
+        "page_end": 3,
+        "content": "loss function defined",
+        "score": 0.91,
     }
     # document_id passed to SQL
     assert seen_args[0][1][0] == DOC_ID
@@ -65,6 +72,7 @@ async def test_semantic_search_calls_embed_texts_with_query():
     conn.fetch.return_value = rows
 
     called = {}
+
     async def fake_embed(key, inputs):
         called["inputs"] = inputs
         return [[0.01] * 1536]
@@ -122,7 +130,9 @@ async def test_locate_phrase_no_hits_returns_empty():
     os.environ.pop("AUTO_HIGHLIGHT_FUZZY", None)
     tools = build_tools(conn, USER_ID, DOC_ID, RUN_ID, "sk-test", PDF_PATH)
     tool = _get_tool(tools, "locate_phrase")
-    result = await tool.ainvoke({"phrase": "quantum teleportation spaghetti", "page_number": 1})
+    result = await tool.ainvoke(
+        {"phrase": "quantum teleportation spaghetti", "page_number": 1}
+    )
     assert result == []
 
 
@@ -148,13 +158,14 @@ async def test_locate_phrase_fuzzy_gated_by_env():
 
 
 @pytest.mark.asyncio
-async def test_locate_phrase_caps_at_20():
+async def test_locate_phrase_caps_at_max(monkeypatch):
     conn = AsyncMock()
+    # "e" appears 17 times in the fixture; cap at 3 so the limit actually bites.
+    monkeypatch.setattr(auto_highlight_tools, "MAX_LOCATE_HITS", 3)
     tools = build_tools(conn, USER_ID, DOC_ID, RUN_ID, "sk-test", PDF_PATH)
     tool = _get_tool(tools, "locate_phrase")
-    # "e" appears many times on the fixture's page
     result = await tool.ainvoke({"phrase": "e", "page_number": 1})
-    assert len(result) <= 20
+    assert len(result) == 3
 
 
 @pytest.mark.asyncio
@@ -167,10 +178,20 @@ async def test_create_highlights_inserts_rows():
     tool = _get_tool(tools, "create_highlights")
 
     matches = [
-        {"page_number": 1, "text_content": "hello", "start_offset": 0, "end_offset": 5,
-         "rects": [{"page": 1, "x0": 10, "y0": 20, "x1": 60, "y1": 40}]},
-        {"page_number": 2, "text_content": "world", "start_offset": 10, "end_offset": 15,
-         "rects": [{"page": 2, "x0": 10, "y0": 20, "x1": 60, "y1": 40}]},
+        {
+            "page_number": 1,
+            "text_content": "hello",
+            "start_offset": 0,
+            "end_offset": 5,
+            "rects": [{"page": 1, "x0": 10, "y0": 20, "x1": 60, "y1": 40}],
+        },
+        {
+            "page_number": 2,
+            "text_content": "world",
+            "start_offset": 10,
+            "end_offset": 15,
+            "rects": [{"page": 2, "x0": 10, "y0": 20, "x1": 60, "y1": 40}],
+        },
     ]
     result = await tool.ainvoke({"matches": matches})
 
@@ -200,8 +221,13 @@ async def test_create_highlights_caps_at_50():
     tools = build_tools(conn, USER_ID, DOC_ID, RUN_ID, "sk-test", PDF_PATH)
     tool = _get_tool(tools, "create_highlights")
     matches = [
-        {"page_number": 1, "text_content": f"m{i}", "start_offset": i, "end_offset": i + 1,
-         "rects": [{"page": 1, "x0": 0, "y0": 0, "x1": 1, "y1": 1}]}
+        {
+            "page_number": 1,
+            "text_content": f"m{i}",
+            "start_offset": i,
+            "end_offset": i + 1,
+            "rects": [{"page": 1, "x0": 0, "y0": 0, "x1": 1, "y1": 1}],
+        }
         for i in range(5)
     ]
     result = await tool.ainvoke({"matches": matches})
