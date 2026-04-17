@@ -1,0 +1,24 @@
+[project]
+name = "inhale-agents"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]",
+    "asyncpg",
+    "pgvector",
+    "httpx",
+    "pydantic",
+    "langchain>=1.0,<2.0",
+    "langchain-core>=1.0,<2.0",
+    "langchain-openai",
+    "pypdf",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "ruff", "ty"]
+
+[tool.setuptools]
+packages = ["deps", "routers", "lib"]
+
+[tool.fastapi]
+entrypoint = "main:app"
