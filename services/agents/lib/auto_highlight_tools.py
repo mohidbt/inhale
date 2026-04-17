@@ -39,7 +39,16 @@ def build_tools(
 
     @tool
     async def semantic_search(query: str, top_k: int = 8) -> list[dict]:
-        """Search the document for passages semantically related to `query`.
+        """Use this toolset only when the user explicitly asks to highlight / mark / annotate passages.
+
+        Examples:
+          YES — "Highlight the passages where the dataset is discussed"
+          YES — "Mark every mention of the attention mechanism"
+          NO  — "What's the methodology?" — answer inline, do NOT call this tool.
+
+        ---
+
+        Search the document for passages semantically related to `query`.
 
         Returns the top_k most similar chunks as
         `{chunk_id, page, page_start, page_end, content, score}`. Use this
@@ -124,7 +133,16 @@ def build_tools(
 
     @tool
     async def create_highlights(matches: list[dict]) -> dict:
-        """Persist a batch of highlight rows for the current run.
+        """Use this toolset only when the user explicitly asks to highlight / mark / annotate passages.
+
+        Examples:
+          YES — "Highlight the passages where the dataset is discussed"
+          YES — "Mark every mention of the attention mechanism"
+          NO  — "What's the methodology?" — answer inline, do NOT call this tool.
+
+        ---
+
+        Persist a batch of highlight rows for the current run.
 
         Each match: `{page_number, text_content, start_offset, end_offset,
         rects}`. All inserts are tagged `source='ai-auto'`, `color='amber'`,

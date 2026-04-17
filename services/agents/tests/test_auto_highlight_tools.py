@@ -294,6 +294,17 @@ async def test_get_run_id_not_awaited_when_no_highlights_created():
     assert call_count["n"] == 0
 
 
+def test_tool_descriptions_gate_intent():
+    """The two entry-point tools must tell the agent when NOT to use them."""
+    conn = AsyncMock()
+    tools = build_tools(conn, USER_ID, DOC_ID, _async_run_id(RUN_ID), "sk-test", PDF_PATH)
+    by_name = {t.name: t for t in tools}
+    for tool_name in ("semantic_search", "create_highlights"):
+        desc = by_name[tool_name].description
+        assert "explicitly" in desc.lower()
+        assert "do NOT call this tool" in desc or "do not call this tool" in desc.lower()
+
+
 @pytest.mark.asyncio
 async def test_finish_returns_summary():
     conn = AsyncMock()
