@@ -1,20 +1,81 @@
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { libraryReferences } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
-import { authorsToDisplay } from "@/lib/citations/author-utils";
+"use client";
 
-export default async function ReferencesPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) redirect("/login");
+import { useState, useEffect } from "react";
+import { CitationCard } from "@/components/reader/citation-card";
+import type { CitationWithStatus } from "@/components/reader/citation-card";
+import type { InferSelectModel } from "drizzle-orm";
+import type { libraryReferences } from "@/db/schema";
+import { toast } from "sonner";
 
-  const refs = await db
-    .select()
-    .from(libraryReferences)
-    .where(eq(libraryReferences.userId, session.user.id))
-    .orderBy(desc(libraryReferences.createdAt));
+type LibraryRef = InferSelectModel<typeof libraryReferences>;
+
+function toCardCitation(ref: LibraryRef): CitationWithStatus {
+  return {
+    // Required DocumentReference fields not on library refs — provide neutral defaults
+    id: ref.id,
+    documentId: 0,
+    markerText: ref.title,
+    markerIndex: 0,
+    rawText: null,
+    pageNumber: null,
+    // Shared fields
+    title: ref.title,
+    authors: ref.authors ?? null,
+    year: ref.year,
+    doi: ref.doi,
+    url: ref.url,
+    semanticScholarId: ref.semanticScholarId,
+    abstract: ref.abstract,
+    venue: ref.venue,
+    citationCount: ref.citationCount,
+    createdAt: ref.createdAt,
+    // Phase 2.2 enrichment fields
+    influentialCitationCount: ref.influentialCitationCount,
+    openAccessPdfUrl: ref.openAccessPdfUrl,
+    tldrText: ref.tldrText,
+    externalIds: ref.externalIds,
+    bibtex: ref.bibtex,
+    // Library-specific status (already saved)
+    keptId: null,
+    libraryReferenceId: ref.id,
+  };
+}
+
+export default function ReferencesPage() {
+  const [refs, setRefs] = useState<LibraryRef[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/library/references")
+      .then((r) => r.json())
+      .then((data: LibraryRef[]) => setRefs(data))
+      .catch(() => toast.error("Failed to load references"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleRemove(id: number) {
+    if (!window.confirm("Remove this reference from your library?")) return;
+
+    const prev = refs;
+    setRefs((r) => r.filter((x) => x.id !== id));
+
+    try {
+      const res = await fetch(`/api/library/references/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`${res.status}`);
+    } catch {
+      setRefs(prev);
+      toast.error("Failed to remove reference");
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <h1 className="text-2xl font-semibold mb-6">Saved References</h1>
+        <p className="text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -29,70 +90,19 @@ export default async function ReferencesPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {refs.map((ref) => {
-            const abstract =
-              ref.abstract && ref.abstract.length > 300
-                ? ref.abstract.slice(0, 300) + "…"
-                : ref.abstract;
-
-            return (
-              <div
-                key={ref.id}
-                className="border rounded-lg p-4 space-y-1.5"
+          {refs.map((ref) => (
+            <div key={ref.id} className="relative group">
+              <CitationCard citation={toCardCitation(ref)} variant="compact" />
+              <button
+                type="button"
+                onClick={() => handleRemove(ref.id)}
+                className="mt-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                aria-label="Remove from library"
               >
-                <p className="font-semibold leading-snug">{ref.title}</p>
-
-                {authorsToDisplay(ref.authors) && (
-                  <p className="text-sm text-muted-foreground line-clamp-1">
-                    {authorsToDisplay(ref.authors)}
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
-                  {ref.year && <span>{ref.year}</span>}
-                  {ref.venue && (
-                    <>
-                      {ref.year && <span aria-hidden>·</span>}
-                      <span className="italic line-clamp-1">{ref.venue}</span>
-                    </>
-                  )}
-                  {ref.citationCount != null && (
-                    <>
-                      {(ref.year || ref.venue) && <span aria-hidden>·</span>}
-                      <span>{ref.citationCount} citations</span>
-                    </>
-                  )}
-                </div>
-
-                {abstract && (
-                  <p className="text-sm text-foreground/80 leading-relaxed pt-1">
-                    {abstract}
-                  </p>
-                )}
-
-                {ref.doi && (
-                  <a
-                    href={`https://doi.org/${ref.doi}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block truncate text-sm text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    doi:{ref.doi}
-                  </a>
-                )}
-                {!ref.doi && ref.url && (
-                  <a
-                    href={ref.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block truncate text-sm text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    {ref.url}
-                  </a>
-                )}
-              </div>
-            );
-          })}
+                Remove
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
