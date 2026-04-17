@@ -43,6 +43,13 @@
       "when": 1776420938150,
       "tag": "0005_hard_speedball",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776433298019,
+      "tag": "0006_many_mandrill",
+      "breakpoints": true
     }
   ]
 }

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 
-type ProviderType = "llm" | "voice" | "ocr";
+type ProviderType = "llm" | "voice" | "ocr" | "references";
 type StorageMode = "cloud" | "browser_only";
 
 interface ApiKey {
@@ -23,18 +23,21 @@ const DEFAULT_PROVIDER_NAMES: Record<ProviderType, string> = {
   llm: "openrouter",
   voice: "elevenlabs",
   ocr: "mistral",
+  references: "semantic-scholar",
 };
 
 const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
   llm: "LLM",
   voice: "Voice",
   ocr: "OCR",
+  references: "References",
 };
 
 const BADGE_COLORS: Record<ProviderType, string> = {
   llm: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
   voice: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
   ocr: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  references: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
 };
 
 export function ApiKeysManager() {
@@ -130,6 +133,7 @@ export function ApiKeysManager() {
                 <option value="llm">LLM</option>
                 <option value="voice">Voice</option>
                 <option value="ocr">OCR</option>
+                <option value="references">Semantic Scholar</option>
               </select>
             </div>
             <div className="space-y-2">
@@ -153,6 +157,19 @@ export function ApiKeysManager() {
               placeholder="Paste your API key here"
               required
             />
+            {providerType === "references" && (
+              <p className="text-xs text-muted-foreground">
+                Semantic Scholar API key (optional — increases rate limits).{" "}
+                <a
+                  href="https://www.semanticscholar.org/product/api"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  Request one here.
+                </a>
+              </p>
+            )}
           </div>
           {formError && (
             <p className="text-sm text-destructive">{formError}</p>

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { documents, documentReferences } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { enrichReferences, type EnrichmentResult } from "@/lib/citations/semantic-scholar";
+import { getUserS2Key } from "@/lib/byok";
 
 export async function POST(
   request: NextRequest,
@@ -54,8 +55,8 @@ export async function POST(
     }
 
     // Enrich references via Semantic Scholar two-pass pipeline
-    // Task C will supply apiKey from BYOK settings; for now it's undefined
-    const results = await enrichReferences(refs);
+    const s2Key = await getUserS2Key(session.user.id);
+    const results = await enrichReferences(refs, { apiKey: s2Key ?? undefined });
 
     type ResolvedResult = EnrichmentResult & { metadata: NonNullable<EnrichmentResult["metadata"]> };
     const enrichedResults = results.filter((r): r is ResolvedResult => r.metadata !== null);
