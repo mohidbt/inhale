@@ -17,6 +17,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["chat"])
 
 
+HIGHLIGHT_TOOL_LABELS = {
+    "semantic_search": "Searching for passages\u2026",
+    "page_text": "Reading page\u2026",
+    "locate_phrase": "Locating phrase\u2026",
+    "create_highlights": "Creating highlights\u2026",
+    "finish": "Finishing up\u2026",
+}
+
+
 class ChatBody(BaseModel):
     question: str = Field(min_length=1)
     conversationId: int | None = None
@@ -123,13 +132,6 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
     # Lazy highlight-run context: populated only if the agent calls create_highlights.
     hl_ctx: dict = {"run_id": None, "highlights_inserted": 0, "summary": None}
 
-    HIGHLIGHT_TOOL_LABELS = {
-        "semantic_search": "Searching for passages\u2026",
-        "page_text": "Reading page\u2026",
-        "locate_phrase": "Locating phrase\u2026",
-        "create_highlights": "Creating highlights\u2026",
-        "finish": "Finishing up\u2026",
-    }
     pdf_path = doc["file_path"]
 
     async def ensure_run_id() -> str:
