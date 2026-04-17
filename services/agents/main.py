@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from deps.db import init_pool, close_pool
-from routers import health, embeddings, outline, chat
+from routers import health, embeddings, outline, chat, auto_highlight
 
 
 @asynccontextmanager
@@ -16,3 +16,4 @@ app.include_router(health.router)
 app.include_router(embeddings.router)
 app.include_router(outline.router)
 app.include_router(chat.router)
+app.include_router(auto_highlight.router)
