@@ -44,7 +44,11 @@ def _parse_sse(text: str) -> list:
 
 def _mock_conn(processing_status="ready"):
     conn = AsyncMock()
-    conn.fetchrow.return_value = {"id": 1, "processing_status": processing_status}
+    conn.fetchrow.return_value = {
+        "id": 1,
+        "processing_status": processing_status,
+        "file_path": "/tmp/fake.pdf",
+    }
     conn.execute.return_value = None
     return conn
 
@@ -168,3 +172,101 @@ def test_chat_unauthenticated():
     body = json.dumps({"question": "Hello"}).encode()
     r = client.post("/agents/chat", content=body)
     assert r.status_code == 401
+
+
+def test_chat_no_tool_calls_does_not_create_highlight_run():
+    """When the agent emits only tokens, no ai_highlight_runs row is inserted."""
+    mock_conn = _mock_conn()
+
+    async def override():
+        yield mock_conn
+
+    app.dependency_overrides[deps.db.get_conn] = override
+
+    fake_retrieval = RetrievalResult(
+        supporting_chunks=[ChunkRow(1, "c", 3, 3, 0.85)],
+        page_text=None, anchor_text=None,
+        sources=[{"page": 3, "relevance": 0.85}],
+    )
+
+    async def fake_run_chat(**kwargs):
+        yield ("token", "hi")
+
+    try:
+        with (
+            patch("routers.chat.retrieve", return_value=fake_retrieval),
+            patch("routers.chat.run_chat", side_effect=fake_run_chat),
+        ):
+            body = json.dumps({"question": "?"}).encode()
+            r = client.post("/agents/chat", content=body,
+                           headers=_signed_headers("POST", "/agents/chat", body))
+            assert r.status_code == 200
+            # Walk fetchrow calls and assert none inserted into ai_highlight_runs.
+            for call in mock_conn.fetchrow.call_args_list:
+                sql = call[0][0] if call[0] else ""
+                assert "ai_highlight_runs" not in sql, f"unexpected run insert: {sql}"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_chat_create_highlights_tool_call_inserts_run_and_finalizes():
+    """When agent calls create_highlights, a run row is inserted and finalized."""
+    mock_conn = _mock_conn()
+
+    # fetchrow is used for document lookup, conversation upsert, AND the run insert.
+    # Sequence: doc fetch → upsert_conversation fetchrow → ai_highlight_runs insert.
+    run_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    fetchrow_calls = []
+
+    async def fetchrow_side_effect(sql, *args):
+        fetchrow_calls.append(sql)
+        if "ai_highlight_runs" in sql:
+            return {"id": run_uuid}
+        if "agent_conversations" in sql:
+            return {"id": 1}
+        # documents lookup
+        return {"id": 1, "processing_status": "ready", "file_path": "/tmp/fake.pdf"}
+
+    mock_conn.fetchrow.side_effect = fetchrow_side_effect
+
+    async def override():
+        yield mock_conn
+
+    app.dependency_overrides[deps.db.get_conn] = override
+
+    fake_retrieval = RetrievalResult(
+        supporting_chunks=[ChunkRow(1, "c", 3, 3, 0.85)],
+        page_text=None, anchor_text=None, sources=[],
+    )
+
+    async def fake_run_chat(**kwargs):
+        # Simulate the agent emitting a create_highlights tool call + result.
+        yield ("token", "ok")
+        yield ("tool_call", "create_highlights", {"matches": []})
+        yield ("tool_result", "create_highlights", {"inserted": 3, "total_in_run": 3, "capped": False})
+        yield ("tool_call", "finish", {"summary": "Highlighted X."})
+        yield ("tool_result", "finish", {"summary": "Highlighted X.", "done": True})
+
+    try:
+        with (
+            patch("routers.chat.retrieve", return_value=fake_retrieval),
+            patch("routers.chat.run_chat", side_effect=fake_run_chat),
+        ):
+            body = json.dumps({"question": "highlight losses"}).encode()
+            r = client.post("/agents/chat", content=body,
+                           headers=_signed_headers("POST", "/agents/chat", body))
+            assert r.status_code == 200
+
+            # A run row was inserted
+            assert any("INSERT INTO ai_highlight_runs" in s for s in fetchrow_calls)
+
+            # The run was finalized (status='completed') via conn.execute
+            update_calls = [c for c in mock_conn.execute.call_args_list
+                            if c[0] and "ai_highlight_runs" in c[0][0]
+                            and "status = 'completed'" in c[0][0]]
+            assert len(update_calls) == 1
+            # The summary captured from finish tool should be persisted
+            args = update_calls[0][0]
+            assert "Highlighted X." in args
+    finally:
+        app.dependency_overrides.clear()

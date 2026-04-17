@@ -107,7 +107,10 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
     model = ChatOpenAI(
         model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key, streaming=False
     )
-    tools = build_tools(conn, user_id, document_id, run_id, api_key, pdf_path)
+    async def _get_run_id() -> str:
+        return run_id
+
+    tools = build_tools(conn, user_id, document_id, _get_run_id, api_key, pdf_path)
     agent = create_agent(model=model, tools=tools, system_prompt=SYSTEM_PROMPT)
 
     async def event_stream():

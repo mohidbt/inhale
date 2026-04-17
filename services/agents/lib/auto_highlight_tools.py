@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from collections.abc import Awaitable, Callable
 from difflib import SequenceMatcher
 
 import anyio
@@ -17,11 +18,23 @@ def build_tools(
     conn,
     user_id: str,
     document_id: int,
-    run_id: str,
+    get_run_id: Callable[[], Awaitable[str]],
     api_key: str,
     pdf_path: str,
 ) -> list:
-    """Build the auto-highlight tool set with context closed over by each @tool."""
+    """Build the auto-highlight tool set with context closed over by each @tool.
+
+    `get_run_id` is an async callable that returns the run_id. It is only
+    awaited lazily on the first `create_highlights` call, and its result is
+    cached for the remainder of the run.
+    """
+
+    cached_run_id: dict[str, str] = {}
+
+    async def _run_id() -> str:
+        if "v" not in cached_run_id:
+            cached_run_id["v"] = await get_run_id()
+        return cached_run_id["v"]
 
     @tool
     async def semantic_search(query: str, top_k: int = 8) -> list[dict]:
@@ -118,6 +131,7 @@ def build_tools(
         if the cap is hit mid-batch, inserts partial and returns
         `{capped: true}`.
         """
+        run_id = await _run_id()
         existing = await conn.fetchval(
             "SELECT COUNT(*) FROM user_highlights WHERE layer_id = $1::uuid",
             run_id,
