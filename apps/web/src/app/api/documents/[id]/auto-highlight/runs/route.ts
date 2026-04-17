@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { aiHighlightRuns, documents, userHighlights } from "@/db/schema";
-import { and, eq, desc, sql } from "drizzle-orm";
+import { and, eq, desc, count } from "drizzle-orm";
 
 export async function GET(
   request: NextRequest,
@@ -31,22 +31,29 @@ export async function GET(
         summary: aiHighlightRuns.summary,
         createdAt: aiHighlightRuns.createdAt,
         completedAt: aiHighlightRuns.completedAt,
-        highlightCount: sql<number>`(
-          SELECT COUNT(*)::int FROM ${userHighlights}
-          WHERE ${userHighlights.layerId} = ${aiHighlightRuns.id}
-        )`,
+        highlightCount: count(userHighlights.id),
       })
       .from(aiHighlightRuns)
+      .leftJoin(userHighlights, eq(userHighlights.layerId, aiHighlightRuns.id))
       .where(
         and(
           eq(aiHighlightRuns.documentId, documentId),
           eq(aiHighlightRuns.userId, session.user.id)
         )
       )
+      .groupBy(
+        aiHighlightRuns.id,
+        aiHighlightRuns.instruction,
+        aiHighlightRuns.status,
+        aiHighlightRuns.summary,
+        aiHighlightRuns.createdAt,
+        aiHighlightRuns.completedAt
+      )
       .orderBy(desc(aiHighlightRuns.createdAt));
 
     return NextResponse.json({ runs: rows });
-  } catch {
+  } catch (err) {
+    console.error("GET /auto-highlight/runs failed:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
