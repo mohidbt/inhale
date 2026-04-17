@@ -65,8 +65,8 @@ def test_chat_sse_contract():
     )
 
     async def fake_run_chat(**kwargs):
-        yield "Hello "
-        yield "world"
+        yield ("token", "Hello ")
+        yield ("token", "world")
 
     try:
         with (

@@ -120,14 +120,18 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
 
         assistant_content = ""
         try:
-            async for token in run_chat(
+            async for event in run_chat(
                 api_key=api_key, history=body.history, question=question,
                 supporting_chunks=retrieval.supporting_chunks,
                 page_text=retrieval.page_text, anchor_text=retrieval.anchor_text,
                 selection_text=selection_text, scope=scope, focus_page=focus_page,
+                tools=None,
             ):
-                assistant_content += token
-                yield _sse({"type": "token", "content": token})
+                if event[0] == "token":
+                    token = event[1]
+                    assistant_content += token
+                    yield _sse({"type": "token", "content": token})
+                # tool_call / tool_result: ignored until Task 45/46 wires tools
         except Exception as e:
             yield _sse({"type": "error", "message": str(e)})
 
