@@ -36,6 +36,13 @@
       "when": 1776115262987,
       "tag": "0004_drop_user_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776412132614,
+      "tag": "0005_phase_2_1_ai_highlight_runs",
+      "breakpoints": true
     }
   ]
 }
