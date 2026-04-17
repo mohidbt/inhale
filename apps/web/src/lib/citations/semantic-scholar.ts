@@ -95,15 +95,19 @@ function buildHeaders(apiKey?: string): Record<string, string> {
 /** Fetch with one-shot 429 retry. Returns null on 404 or persistent failure. */
 async function fetchGet(url: string, apiKey?: string): Promise<Response | null> {
   const headers = buildHeaders(apiKey);
-  let response = await fetch(url, Object.keys(headers).length ? { headers } : undefined);
+  const fetchInit = Object.keys(headers).length ? { headers } : undefined;
+  let response = await fetch(url, fetchInit);
 
   if (response.status === 429) {
     await sleep(RETRY_DELAY_MS);
-    response = await fetch(url, Object.keys(headers).length ? { headers } : undefined);
+    response = await fetch(url, fetchInit);
   }
 
   if (response.status === 404) return null;
-  if (!response.ok) return null;
+  if (!response.ok) {
+    console.warn(`[fetchGet] non-OK response: ${response.status} for ${url}`);
+    return null;
+  }
   return response;
 }
 
@@ -174,7 +178,28 @@ export async function fetchPaperBatch(
       body: JSON.stringify({ ids: chunk }),
     });
 
-    if (!response.ok) continue;
+    if (response.status === 429) {
+      await sleep(RETRY_DELAY_MS);
+      const retry = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ ids: chunk }),
+      });
+      if (!retry.ok) {
+        console.warn(`[fetchPaperBatch] non-OK response after retry: ${retry.status} (chunk size: ${chunk.length})`);
+        continue;
+      }
+      const retryData = (await retry.json()) as (RawPaper | null)[];
+      for (const item of retryData) {
+        if (item) results.push(mapPaper(item));
+      }
+      continue;
+    }
+
+    if (!response.ok) {
+      console.warn(`[fetchPaperBatch] non-OK response: ${response.status} (chunk size: ${chunk.length})`);
+      continue;
+    }
 
     const data = (await response.json()) as (RawPaper | null)[];
     for (const item of data) {
@@ -198,10 +223,10 @@ export async function enrichReferences(
   // Pass 1: resolve paperId for each ref
   const resolved: Array<{ ref: ReferenceForEnrichment; paperId: string | null }> = [];
 
-  for (const ref of refs) {
-    const paperId = await resolvePaperId(ref, opts);
-    resolved.push({ ref, paperId });
-    await sleep(RESOLVE_DELAY_MS);
+  for (let i = 0; i < refs.length; i++) {
+    const paperId = await resolvePaperId(refs[i], opts);
+    resolved.push({ ref: refs[i], paperId });
+    if (i < refs.length - 1) await sleep(RESOLVE_DELAY_MS);
   }
 
   // Pass 2: batch fetch all resolved ids

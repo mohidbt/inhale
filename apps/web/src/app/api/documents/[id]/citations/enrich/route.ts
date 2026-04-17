@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { documents, documentReferences } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
-import { enrichReferences } from "@/lib/citations/semantic-scholar";
+import { enrichReferences, type EnrichmentResult } from "@/lib/citations/semantic-scholar";
 
 export async function POST(
   request: NextRequest,
@@ -57,7 +57,8 @@ export async function POST(
     // Task C will supply apiKey from BYOK settings; for now it's undefined
     const results = await enrichReferences(refs);
 
-    const enrichedResults = results.filter((r) => r.metadata !== null);
+    type ResolvedResult = EnrichmentResult & { metadata: NonNullable<EnrichmentResult["metadata"]> };
+    const enrichedResults = results.filter((r): r is ResolvedResult => r.metadata !== null);
 
     // Update each matched reference in parallel (each targets a distinct id)
     await Promise.all(
@@ -65,22 +66,22 @@ export async function POST(
         db
           .update(documentReferences)
           .set({
-            semanticScholarId: metadata!.paperId,
-            title: metadata!.title,
-            authors: metadata!.authors.length > 0 ? metadata!.authors : null,
-            year: metadata!.year != null ? String(metadata!.year) : null,
-            doi: metadata!.externalIds?.DOI ?? null,
-            url: metadata!.paperId
-              ? `https://www.semanticscholar.org/paper/${metadata!.paperId}`
+            semanticScholarId: metadata.paperId,
+            title: metadata.title,
+            authors: metadata.authors.length > 0 ? metadata.authors : null,
+            year: metadata.year != null ? String(metadata.year) : null,
+            doi: metadata.externalIds?.DOI ?? null,
+            url: metadata.paperId
+              ? `https://www.semanticscholar.org/paper/${metadata.paperId}`
               : null,
-            abstract: metadata!.abstract,
-            venue: metadata!.venue,
-            citationCount: metadata!.citationCount,
-            influentialCitationCount: metadata!.influentialCitationCount,
-            openAccessPdfUrl: metadata!.openAccessPdfUrl,
-            tldrText: metadata!.tldr,
-            externalIds: metadata!.externalIds,
-            bibtex: metadata!.bibtex,
+            abstract: metadata.abstract,
+            venue: metadata.venue,
+            citationCount: metadata.citationCount,
+            influentialCitationCount: metadata.influentialCitationCount,
+            openAccessPdfUrl: metadata.openAccessPdfUrl,
+            tldrText: metadata.tldr,
+            externalIds: metadata.externalIds,
+            bibtex: metadata.bibtex,
           })
           .where(eq(documentReferences.id, refId))
       )
