@@ -1,15 +1,28 @@
 "use client";
 
-import type { ChatAttachment } from "@/hooks/use-chat";
+import type { ChatAttachment, ChatMessageKind } from "@/hooks/use-chat";
 
 interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
   attachment?: ChatAttachment;
+  kind?: ChatMessageKind;
+  progressSteps?: string[];
+  highlightsCount?: number;
 }
 
-export function ChatMessage({ role, content, isStreaming = false, attachment }: ChatMessageProps) {
+export function ChatMessage({
+  role,
+  content,
+  isStreaming = false,
+  attachment,
+  kind = "chat",
+  progressSteps,
+  highlightsCount,
+}: ChatMessageProps) {
+  const isProgress = kind === "auto-highlight-progress";
+  const isResult = kind === "auto-highlight-result";
   return (
     <div className={`flex ${role === "user" ? "justify-end" : "justify-start"} mb-3`}>
       <div
@@ -29,8 +42,33 @@ export function ChatMessage({ role, content, isStreaming = false, attachment }: 
             </p>
           </div>
         )}
-        <p className="whitespace-pre-wrap">{content}</p>
-        {isStreaming && <span className="animate-pulse">▋</span>}
+        {isProgress ? (
+          <div>
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-70">
+              Auto-highlight
+            </p>
+            {content && <p className="mb-1 whitespace-pre-wrap">{content}</p>}
+            {progressSteps && progressSteps.length > 0 && (
+              <ul className="space-y-0.5 text-xs">
+                {progressSteps.map((s, i) => (
+                  <li key={i}>• {s}</li>
+                ))}
+              </ul>
+            )}
+            {isStreaming && <span className="animate-pulse">▋</span>}
+          </div>
+        ) : (
+          <>
+            {isResult && (
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-70">
+                Auto-highlight{" "}
+                {typeof highlightsCount === "number" && `· ${highlightsCount} highlight${highlightsCount === 1 ? "" : "s"}`}
+              </p>
+            )}
+            <p className="whitespace-pre-wrap">{content}</p>
+            {isStreaming && <span className="animate-pulse">▋</span>}
+          </>
+        )}
       </div>
     </div>
   );

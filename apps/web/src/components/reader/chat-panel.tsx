@@ -1,9 +1,10 @@
 "use client";
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { X, Sparkles } from "lucide-react";
-import { useChat, type ChatScope } from "@/hooks/use-chat";
+import { useChat, type ChatScope, type ChatMessage as ChatMessageType } from "@/hooks/use-chat";
 import { useViewportTracking } from "@/hooks/use-viewport-tracking";
 import { useReaderState } from "@/hooks/use-reader-state";
+import { parseHighlightCommand, useAutoHighlight } from "@/hooks/use-auto-highlight";
 import { ChatMessage } from "./chat-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,8 @@ interface ChatPanelProps {
   dockControl?: ReactNode;
   currentPage?: number;
   processingStatus?: DocProcessingStatus;
+  // Called after /highlight finishes so the parent can refetch highlights.
+  onHighlightsChanged?: () => void;
 }
 
 interface ConversationListItem {
@@ -49,6 +52,7 @@ export function ChatPanel({
   dockControl,
   currentPage,
   processingStatus = "ready",
+  onHighlightsChanged,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -67,14 +71,17 @@ export function ChatPanel({
   const viewportRef = useViewportTracking(scrollContainerRef);
   const {
     messages,
+    setMessages,
     sources,
     streaming,
     error,
     conversationId,
+    setConversationId,
     sendMessage,
     clearMessages,
     loadConversation,
   } = useChat(documentId);
+  const { runAutoHighlight, running: autoHighlightRunning } = useAutoHighlight(documentId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -114,9 +121,83 @@ export function ChatPanel({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || streaming) return;
+    if (!input.trim() || streaming || autoHighlightRunning) return;
     const q = input;
     setInput("");
+
+    // Intercept `/highlight ...` before it hits the chat endpoint.
+    const cmd = parseHighlightCommand(q);
+    if (cmd.matched) {
+      if (!cmd.instruction) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "user", content: q },
+          {
+            role: "assistant",
+            content: "Try: `/highlight where the loss function is described`",
+            kind: "auto-highlight-result",
+          },
+        ]);
+        return;
+      }
+      // Seed the transcript: user message + ephemeral progress message.
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", content: q },
+        {
+          role: "assistant",
+          content: "",
+          kind: "auto-highlight-progress",
+          progressSteps: [],
+        },
+      ]);
+      const appendProgress = (line: string) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (!last || last.kind !== "auto-highlight-progress") return prev;
+          updated[updated.length - 1] = {
+            ...last,
+            progressSteps: [...(last.progressSteps ?? []), line],
+          };
+          return updated;
+        });
+      };
+      const finalizeAssistant = (patch: Partial<ChatMessageType>) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (!last || last.role !== "assistant") return prev;
+          updated[updated.length - 1] = { ...last, ...patch };
+          return updated;
+        });
+      };
+      await runAutoHighlight(cmd.instruction, {
+        conversationId,
+        onRun: ({ runId, conversationId: convId }) => {
+          if (convId != null) setConversationId(convId);
+          finalizeAssistant({ runId });
+        },
+        onProgress: ({ detail }) => appendProgress(detail),
+        onError: (msg) =>
+          finalizeAssistant({
+            kind: "auto-highlight-result",
+            content: `Error: ${msg}`,
+            progressSteps: undefined,
+          }),
+        onDone: ({ summary, highlightsCount }) => {
+          finalizeAssistant({
+            kind: "auto-highlight-result",
+            content: summary || `Created ${highlightsCount} highlight(s).`,
+            highlightsCount,
+            progressSteps: undefined,
+          });
+          onHighlightsChanged?.();
+        },
+      });
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
 
     let sendOptions: {
       scope: ChatScope;
@@ -244,15 +325,25 @@ export function ChatPanel({
             Ask a question about this paper
           </p>
         )}
-        {messages.map((msg, i) => (
-          <ChatMessage
-            key={i}
-            role={msg.role}
-            content={msg.content}
-            attachment={msg.attachment}
-            isStreaming={streaming && i === messages.length - 1 && msg.role === "assistant"}
-          />
-        ))}
+        {messages.map((msg, i) => {
+          const isLast = i === messages.length - 1;
+          const isStreaming =
+            isLast &&
+            msg.role === "assistant" &&
+            (streaming || (autoHighlightRunning && msg.kind === "auto-highlight-progress"));
+          return (
+            <ChatMessage
+              key={i}
+              role={msg.role}
+              content={msg.content}
+              attachment={msg.attachment}
+              kind={msg.kind}
+              progressSteps={msg.progressSteps}
+              highlightsCount={msg.highlightsCount}
+              isStreaming={isStreaming}
+            />
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
       <div className="border-t px-3 pt-2 space-y-2">
@@ -373,15 +464,15 @@ export function ChatPanel({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={docReady ? "Ask about this paper..." : "Chat unavailable until processing completes"}
-          disabled={streaming || !docReady}
+          disabled={streaming || autoHighlightRunning || !docReady}
           className="text-sm"
         />
         <Button
           type="submit"
           size="sm"
-          disabled={streaming || !input.trim() || !docReady}
+          disabled={streaming || autoHighlightRunning || !input.trim() || !docReady}
         >
-          {streaming ? "..." : "Send"}
+          {streaming || autoHighlightRunning ? "..." : "Send"}
         </Button>
       </form>
     </div>

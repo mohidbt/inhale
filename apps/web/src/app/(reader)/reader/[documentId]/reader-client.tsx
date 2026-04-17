@@ -568,6 +568,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   dockControl={<DockMenu dock={chatDock} onChange={setChatDock} onClose={() => setChatOpen(false)} />}
                   currentPage={currentPage}
                   processingStatus={processingStatus}
+                  onHighlightsChanged={() => setRefreshKey((k) => k + 1)}
                 />
               ),
             });

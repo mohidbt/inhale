@@ -7,10 +7,20 @@ export interface ChatAttachment {
   pageNumber: number;
 }
 
+export type ChatMessageKind =
+  | "chat"
+  | "auto-highlight-progress"
+  | "auto-highlight-result";
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   attachment?: ChatAttachment;
+  // Auto-highlight metadata (populated only for kind !== "chat").
+  kind?: ChatMessageKind;
+  runId?: string;
+  highlightsCount?: number;
+  progressSteps?: string[];
 }
 
 export interface ChatSource {
@@ -152,10 +162,12 @@ export function useChat(documentId: number) {
 
   return {
     messages,
+    setMessages,
     sources,
     streaming,
     error,
     conversationId,
+    setConversationId,
     sendMessage,
     clearMessages,
     loadConversation,
