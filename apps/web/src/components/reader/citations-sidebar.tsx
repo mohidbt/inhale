@@ -19,16 +19,22 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
   const [enriching, setEnriching] = useState(false);
   const enrichFiredRef = useRef(false);
 
+  // Reset enrich gate when document changes
+  useEffect(() => {
+    enrichFiredRef.current = false;
+  }, [documentId]);
+
   // Auto-enrich once per session open when any ref lacks semanticScholarId
   useEffect(() => {
-    if (!open || loading || enrichFiredRef.current) return;
-    if (citations.length === 0) return;
+    if (!open || citations.length === 0) return;
     if (!citations.some((r) => !r.semanticScholarId)) return;
+    if (enrichFiredRef.current) return;
 
     enrichFiredRef.current = true;
+    const controller = new AbortController();
     setEnriching(true);
 
-    fetch(`/api/documents/${documentId}/citations/enrich`, { method: "POST" })
+    fetch(`/api/documents/${documentId}/citations/enrich`, { method: "POST", signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error(`enrich failed: ${res.status}`);
         return res.json();
@@ -37,13 +43,16 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
         onExtracted?.();
       })
       .catch((err) => {
+        if (err.name === "AbortError") return;
         console.error("[citations-sidebar] enrich error", err);
         toast.error("Enrichment failed. Citations shown with available data.");
       })
       .finally(() => {
-        setEnriching(false);
+        if (!controller.signal.aborted) setEnriching(false);
       });
-  }, [open, loading, citations, documentId, onExtracted]);
+
+    return () => controller.abort();
+  }, [open, citations, documentId, onExtracted]);
 
   const handleExtract = useCallback(async () => {
     setExtracting(true);
