@@ -3,19 +3,44 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { documents } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc, asc, or, ilike, sql } from "drizzle-orm";
 import { UploadZone } from "@/components/library/upload-zone";
 import { DocumentCard } from "@/components/library/document-card";
+import { LibraryToolbar } from "@/components/library/library-toolbar";
 
-export default async function LibraryPage() {
+type SortKey = "recent" | "uploaded" | "title";
+
+export default async function LibraryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; q?: string }>;
+}) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) redirect("/login");
+
+  const sp = await searchParams;
+  const sort: SortKey =
+    sp.sort === "uploaded" || sp.sort === "title" ? sp.sort : "recent";
+  const q = (sp.q ?? "").trim();
+
+  const filters = [eq(documents.userId, session.user.id)];
+  if (q.length > 0) {
+    const needle = `%${q}%`;
+    filters.push(or(ilike(documents.title, needle), ilike(documents.filename, needle))!);
+  }
+
+  const orderBy =
+    sort === "title"
+      ? [asc(documents.title)]
+      : sort === "uploaded"
+        ? [desc(documents.createdAt)]
+        : [sql`${documents.lastOpenedAt} DESC NULLS LAST`, desc(documents.createdAt)];
 
   const docs = await db
     .select()
     .from(documents)
-    .where(eq(documents.userId, session.user.id))
-    .orderBy(desc(documents.createdAt));
+    .where(and(...filters))
+    .orderBy(...orderBy);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -23,13 +48,15 @@ export default async function LibraryPage() {
 
       <UploadZone />
 
+      <LibraryToolbar sort={sort} q={q} />
+
       {docs.length === 0 ? (
         <div className="mt-12 text-center text-muted-foreground">
-          <p className="text-lg">No documents yet.</p>
-          <p className="text-sm mt-1">Upload a PDF above to get started.</p>
+          <p className="text-lg">{q ? "No matches." : "No documents yet."}</p>
+          {!q && <p className="text-sm mt-1">Upload a PDF above to get started.</p>}
         </div>
       ) : (
-        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {docs.map((doc) => (
             <DocumentCard
               key={doc.id}
