@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from fastapi import APIRouter, HTTPException
@@ -15,7 +16,7 @@ from lib.conversations import bump_updated_at, insert_message
 
 router = APIRouter(prefix="/agents", tags=["auto-highlight"])
 
-AGENT_RECURSION_LIMIT = 25
+AGENT_RECURSION_LIMIT = 25  # max tool-call depth before agent aborts
 
 SYSTEM_PROMPT = (
     "You create highlights on a single PDF based on the user's instruction.\n"
@@ -42,14 +43,18 @@ def _sse_done() -> str:
     return "data: [DONE]\n\n"
 
 
-async def _upsert_auto_highlight_conv(conn, *, user_id, document_id, conversation_id, title):
+async def _upsert_auto_highlight_conv(
+    conn, *, user_id, document_id, conversation_id, title
+):
     """Like upsert_conversation but forces kind='auto-highlight' on insert."""
     if conversation_id is not None:
         return conversation_id
     row = await conn.fetchrow(
         "INSERT INTO agent_conversations (user_id, document_id, title, kind) "
         "VALUES ($1, $2, $3, 'auto-highlight') RETURNING id",
-        user_id, document_id, (title or "")[:80],
+        user_id,
+        document_id,
+        (title or "")[:80],
     )
     return row["id"]
 
@@ -65,7 +70,8 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
 
     doc = await conn.fetchrow(
         "SELECT id, file_path FROM documents WHERE id = $1 AND user_id = $2",
-        document_id, user_id,
+        document_id,
+        user_id,
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
@@ -74,24 +80,33 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
     pdf_path = doc["file_path"]
 
     conv_id = await _upsert_auto_highlight_conv(
-        conn, user_id=user_id, document_id=document_id,
-        conversation_id=body.conversationId, title=instruction,
+        conn,
+        user_id=user_id,
+        document_id=document_id,
+        conversation_id=body.conversationId,
+        title=instruction,
     )
 
     # Persist the user message up front (mirrors chat.py pattern)
-    await insert_message(conn, conversation_id=conv_id, role="user", content=instruction)
+    await insert_message(
+        conn, conversation_id=conv_id, role="user", content=instruction
+    )
 
     # Create the run row; its id is the layer_id highlights will be tagged with.
     run_row = await conn.fetchrow(
         "INSERT INTO ai_highlight_runs "
         "(document_id, user_id, instruction, status, conversation_id) "
         "VALUES ($1, $2, $3, 'running', $4) RETURNING id",
-        document_id, user_id, instruction, conv_id,
+        document_id,
+        user_id,
+        instruction,
+        conv_id,
     )
     run_id = str(run_row["id"])
 
-    model = ChatOpenAI(model=CHAT_MODEL, base_url=OPENROUTER_BASE,
-                      api_key=api_key, streaming=False)
+    model = ChatOpenAI(
+        model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key, streaming=False
+    )
     tools = build_tools(conn, user_id, document_id, run_id, api_key, pdf_path)
     agent = create_agent(model=model, tools=tools, system_prompt=SYSTEM_PROMPT)
 
@@ -114,20 +129,36 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
                     for m in msgs:
                         if not isinstance(m, AIMessage):
                             continue
-                        for tc in (m.tool_calls or []):
+                        for tc in m.tool_calls or []:
                             name = tc.get("name", "tool")
                             args = tc.get("args") or {}
                             detail = _progress_detail(name, args)
-                            yield _sse({"type": "progress", "step": name, "detail": detail})
+                            yield _sse(
+                                {"type": "progress", "step": name, "detail": detail}
+                            )
                             if name == "finish":
                                 summary = str(args.get("summary", "")) or summary
+        except asyncio.CancelledError:
+            # Browser disconnect: best-effort mark row failed, then re-raise.
+            try:
+                await conn.execute(
+                    "UPDATE ai_highlight_runs SET status = 'failed', completed_at = now() "
+                    "WHERE id = $1::uuid",
+                    run_id,
+                )
+            except Exception:
+                pass
+            raise
         except Exception as e:  # noqa: BLE001
             error_msg = str(e)
 
-        highlights_count = int(await conn.fetchval(
-            "SELECT COUNT(*) FROM user_highlights WHERE layer_id = $1::uuid",
-            run_id,
-        ) or 0)
+        highlights_count = int(
+            await conn.fetchval(
+                "SELECT COUNT(*) FROM user_highlights WHERE layer_id = $1::uuid",
+                run_id,
+            )
+            or 0
+        )
 
         if error_msg is not None:
             yield _sse({"type": "error", "message": error_msg})
@@ -142,16 +173,27 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
                 "SET status = 'completed', completed_at = now(), "
                 "summary = $2, model_used = $3 "
                 "WHERE id = $1::uuid",
-                run_id, summary or None, CHAT_MODEL,
+                run_id,
+                summary or None,
+                CHAT_MODEL,
             )
-            yield _sse({"type": "done", "summary": summary,
-                        "highlightsCount": highlights_count})
+            yield _sse(
+                {
+                    "type": "done",
+                    "summary": summary,
+                    "highlightsCount": highlights_count,
+                }
+            )
 
         # Persist assistant message + bump conversation
         assistant_content = summary if error_msg is None else f"Error: {error_msg}"
         try:
-            await insert_message(conn, conversation_id=conv_id, role="assistant",
-                                content=assistant_content)
+            await insert_message(
+                conn,
+                conversation_id=conv_id,
+                role="assistant",
+                content=assistant_content,
+            )
             await bump_updated_at(conn, conv_id)
         except Exception:
             pass

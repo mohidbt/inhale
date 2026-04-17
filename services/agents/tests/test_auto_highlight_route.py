@@ -1,4 +1,8 @@
-import hmac, hashlib, json, os, time
+import hashlib
+import hmac
+import json
+import os
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 SECRET = "test-secret-abc"
@@ -87,8 +91,11 @@ def test_missing_document_id():
 
     app.dependency_overrides[deps.db.get_conn] = override
     try:
-        r = client.post(PATH, content=body,
-                        headers=_signed_headers("POST", PATH, body, document_id=None))
+        r = client.post(
+            PATH,
+            content=body,
+            headers=_signed_headers("POST", PATH, body, document_id=None),
+        )
         assert r.status_code == 400
     finally:
         app.dependency_overrides.clear()
@@ -103,8 +110,7 @@ def test_document_not_found():
     app.dependency_overrides[deps.db.get_conn] = override
     try:
         body = json.dumps({"instruction": "highlight losses"}).encode()
-        r = client.post(PATH, content=body,
-                        headers=_signed_headers("POST", PATH, body))
+        r = client.post(PATH, content=body, headers=_signed_headers("POST", PATH, body))
         assert r.status_code == 404
     finally:
         app.dependency_overrides.clear()
@@ -136,22 +142,62 @@ def test_happy_path_streams_run_progress_done():
     # Scripted updates: model calls semantic_search, tools node runs it,
     # model calls finish, tools node runs it (returns summary).
     updates = [
-        {"model": {"messages": [AIMessage(
-            content="",
-            tool_calls=[{"name": "semantic_search", "args": {"query": "loss"},
-                         "id": "call_1", "type": "tool_call"}],
-        )]}},
-        {"tools": {"messages": [ToolMessage(content="[]", tool_call_id="call_1",
-                                             name="semantic_search")]}},
-        {"model": {"messages": [AIMessage(
-            content="",
-            tool_calls=[{"name": "finish",
-                         "args": {"summary": "Highlighted 2 passages."},
-                         "id": "call_2", "type": "tool_call"}],
-        )]}},
-        {"tools": {"messages": [ToolMessage(
-            content=json.dumps({"summary": "Highlighted 2 passages.", "done": True}),
-            tool_call_id="call_2", name="finish")]}},
+        {
+            "model": {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "semantic_search",
+                                "args": {"query": "loss"},
+                                "id": "call_1",
+                                "type": "tool_call",
+                            }
+                        ],
+                    )
+                ]
+            }
+        },
+        {
+            "tools": {
+                "messages": [
+                    ToolMessage(
+                        content="[]", tool_call_id="call_1", name="semantic_search"
+                    )
+                ]
+            }
+        },
+        {
+            "model": {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "finish",
+                                "args": {"summary": "Highlighted 2 passages."},
+                                "id": "call_2",
+                                "type": "tool_call",
+                            }
+                        ],
+                    )
+                ]
+            }
+        },
+        {
+            "tools": {
+                "messages": [
+                    ToolMessage(
+                        content=json.dumps(
+                            {"summary": "Highlighted 2 passages.", "done": True}
+                        ),
+                        tool_call_id="call_2",
+                        name="finish",
+                    )
+                ]
+            }
+        },
     ]
 
     fake_agent = _make_fake_agent(updates)
@@ -162,8 +208,9 @@ def test_happy_path_streams_run_progress_done():
             mock_conn.fetchval.return_value = 2
 
             body = json.dumps({"instruction": "highlight losses"}).encode()
-            r = client.post(PATH, content=body,
-                            headers=_signed_headers("POST", PATH, body))
+            r = client.post(
+                PATH, content=body, headers=_signed_headers("POST", PATH, body)
+            )
             assert r.status_code == 200
             assert r.headers["content-type"] == "text/event-stream; charset=utf-8"
 
@@ -174,13 +221,19 @@ def test_happy_path_streams_run_progress_done():
             assert events[0]["conversationId"] == 42
 
             # Progress events for tool calls
-            progress = [e for e in events if isinstance(e, dict) and e.get("type") == "progress"]
+            progress = [
+                e for e in events if isinstance(e, dict) and e.get("type") == "progress"
+            ]
             assert len(progress) >= 1
             steps = [e["step"] for e in progress]
             assert "semantic_search" in steps
+            # _progress_detail branching: semantic_search produces "searching: ..."
+            assert progress[0]["detail"].startswith("searching:")
 
             # done
-            done = [e for e in events if isinstance(e, dict) and e.get("type") == "done"]
+            done = [
+                e for e in events if isinstance(e, dict) and e.get("type") == "done"
+            ]
             assert len(done) == 1
             assert done[0]["summary"] == "Highlighted 2 passages."
             assert done[0]["highlightsCount"] == 2
@@ -191,8 +244,11 @@ def test_happy_path_streams_run_progress_done():
         # Verify ai_highlight_runs row was inserted as running, then updated completed
         executes = [c.args for c in mock_conn.execute.call_args_list]
         # look for UPDATE to 'completed'
-        update_queries = [args[0] for args in executes if "UPDATE" in args[0].upper()
-                          and "AI_HIGHLIGHT_RUNS" in args[0].upper()]
+        update_queries = [
+            args[0]
+            for args in executes
+            if "UPDATE" in args[0].upper() and "AI_HIGHLIGHT_RUNS" in args[0].upper()
+        ]
         assert any("completed" in q or "status" in q.lower() for q in update_queries)
     finally:
         app.dependency_overrides.clear()
@@ -218,15 +274,18 @@ def test_failure_path_marks_run_failed():
     try:
         with patch("routers.auto_highlight.create_agent", return_value=fake):
             body = json.dumps({"instruction": "highlight losses"}).encode()
-            r = client.post(PATH, content=body,
-                            headers=_signed_headers("POST", PATH, body))
+            r = client.post(
+                PATH, content=body, headers=_signed_headers("POST", PATH, body)
+            )
             assert r.status_code == 200
 
             events = _parse_sse(r.text)
             # run event first
             assert events[0]["type"] == "run"
             # error event somewhere
-            errs = [e for e in events if isinstance(e, dict) and e.get("type") == "error"]
+            errs = [
+                e for e in events if isinstance(e, dict) and e.get("type") == "error"
+            ]
             assert len(errs) == 1
             assert "llm exploded" in errs[0]["message"]
             # [DONE] still terminates
@@ -234,10 +293,59 @@ def test_failure_path_marks_run_failed():
 
         # Verify UPDATE to 'failed' happened
         executes = [c.args for c in mock_conn.execute.call_args_list]
-        failed_updates = [args for args in executes
-                          if "UPDATE" in args[0].upper()
-                          and "AI_HIGHLIGHT_RUNS" in args[0].upper()
-                          and "failed" in " ".join(str(a) for a in args)]
+        failed_updates = [
+            args
+            for args in executes
+            if "UPDATE" in args[0].upper()
+            and "AI_HIGHLIGHT_RUNS" in args[0].upper()
+            and "failed" in " ".join(str(a) for a in args)
+        ]
         assert len(failed_updates) >= 1
     finally:
         app.dependency_overrides.clear()
+
+
+def test_cancelled_run_marks_failed():
+    """Browser disconnect (CancelledError) -> row marked 'failed' before re-raising."""
+    import asyncio
+
+    from routers.auto_highlight import auto_highlight
+
+    mock_conn = _mock_conn()
+
+    fake = MagicMock()
+
+    async def astream(_input, _config=None, *, stream_mode=None, **kwargs):
+        raise asyncio.CancelledError()
+        yield  # pragma: no cover - makes this a generator
+
+    fake.astream = astream
+
+    async def run():
+        auth = {"user_id": "user_1", "document_id": "1", "llm_key": "sk-test"}
+        body = type(
+            "B", (), {"instruction": "highlight losses", "conversationId": None}
+        )()
+        with patch("routers.auto_highlight.create_agent", return_value=fake):
+            resp = await auto_highlight(body, auth, mock_conn)
+            # Drain the streaming body; CancelledError should propagate.
+            cancelled = False
+            try:
+                async for _chunk in resp.body_iterator:
+                    pass
+            except asyncio.CancelledError:
+                cancelled = True
+            assert cancelled, "CancelledError should be re-raised to the caller"
+
+    asyncio.run(run())
+
+    # Verify UPDATE to 'failed' happened from the CancelledError handler.
+    executes = [c.args for c in mock_conn.execute.call_args_list]
+    failed_updates = [
+        args
+        for args in executes
+        if "UPDATE" in args[0].upper()
+        and "AI_HIGHLIGHT_RUNS" in args[0].upper()
+        and "failed" in " ".join(str(a) for a in args)
+    ]
+    assert len(failed_updates) >= 1
