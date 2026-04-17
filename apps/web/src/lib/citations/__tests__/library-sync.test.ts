@@ -20,6 +20,12 @@ function makeRef(overrides: Partial<DocumentReference> = {}): DocumentReference 
     citationCount: null,
     pageNumber: null,
     createdAt: new Date("2024-01-01"),
+    // Phase 2.2 enrichment fields
+    influentialCitationCount: null,
+    openAccessPdfUrl: null,
+    tldrText: null,
+    externalIds: null,
+    bibtex: null,
     ...overrides,
   };
 }
@@ -58,7 +64,7 @@ describe("buildLibraryReference", () => {
   it("passes through all other fields", () => {
     const ref = makeRef({
       title: "A Paper",
-      authors: "Smith, J.",
+      authors: [{ name: "Smith, J." }],
       year: "2023",
       doi: "10.1234/abc",
       url: "https://example.com",
@@ -69,7 +75,7 @@ describe("buildLibraryReference", () => {
     });
     const result = buildLibraryReference("user-99", ref);
     expect(result.userId).toBe("user-99");
-    expect(result.authors).toBe("Smith, J.");
+    expect(result.authors).toEqual([{ name: "Smith, J." }]);
     expect(result.year).toBe("2023");
     expect(result.doi).toBe("10.1234/abc");
     expect(result.url).toBe("https://example.com");

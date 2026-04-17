@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { extractPdfPages } from "@/lib/ai/pdf-text";
 import { extractCitations } from "@/lib/citations/parser";
 import { extractAnnotationMarkers } from "@/lib/citations/annotation-extractor";
+import { authorStringToJson } from "@/lib/citations/author-utils";
 
 export async function POST(
   request: NextRequest,
@@ -73,7 +74,7 @@ export async function POST(
             markerIndex: ref.markerIndex,
             rawText: ref.rawText ?? null,
             title: ref.title ?? null,
-            authors: ref.authors ?? null,
+            authors: authorStringToJson(ref.authors),
             year: ref.year ?? null,
             doi: ref.doi ?? null,
             url: ref.url ?? null,
@@ -134,7 +135,7 @@ export async function POST(
               markerIndex: ref.markerIndex,
               rawText: ref.rawText ?? null,
               title: ref.title ?? null,
-              authors: ref.authors ?? null,
+              authors: authorStringToJson(ref.authors),
               year: ref.year ?? null,
               doi: ref.doi ?? null,
               url: ref.url ?? null,

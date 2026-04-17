@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { documentReferences } from "@/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
+import { authorsToDisplay } from "@/lib/citations/author-utils";
 
 export type DocumentReference = InferSelectModel<typeof documentReferences>;
 
@@ -98,9 +99,9 @@ export function CitationCard({
 
       {/* Metadata */}
       <div className="space-y-1.5 p-3">
-        {citation.authors && (
+        {authorsToDisplay(citation.authors) && (
           <p className="text-xs text-muted-foreground line-clamp-2">
-            {citation.authors}
+            {authorsToDisplay(citation.authors)}
           </p>
         )}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">

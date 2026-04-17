@@ -3,6 +3,7 @@
 import { useState, useCallback, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import type { CitationWithStatus } from "@/components/reader/citation-card";
+import { authorsToDisplay } from "@/lib/citations/author-utils";
 
 // Strip leading "[n] " or "n. " marker prefix that parseBibLines stores in rawText.
 const MARKER_PREFIX_RE = /^(?:\[\d{1,3}\]\s+|\d{1,3}\.\s+)/;
@@ -91,10 +92,11 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
               // garbled by two-column PDF layouts interleaving bibliography with body text.
               // Fall back to a hard-capped rawText (120 chars) to avoid showing junk, then
               // title, then markerText.
+              const authorStr = authorsToDisplay(c.authors);
               const structuredLabel =
-                c.authors && c.year
-                  ? `${c.authors} (${c.year})`
-                  : c.authors ?? null;
+                authorStr && c.year
+                  ? `${authorStr} (${c.year})`
+                  : authorStr ?? null;
               const rawLabel = c.rawText
                 ? c.rawText.replace(MARKER_PREFIX_RE, "").trim().slice(0, 120)
                 : null;

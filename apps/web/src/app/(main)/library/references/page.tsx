@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { libraryReferences } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { authorsToDisplay } from "@/lib/citations/author-utils";
 
 export default async function ReferencesPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -41,9 +42,9 @@ export default async function ReferencesPage() {
               >
                 <p className="font-semibold leading-snug">{ref.title}</p>
 
-                {ref.authors && (
+                {authorsToDisplay(ref.authors) && (
                   <p className="text-sm text-muted-foreground line-clamp-1">
-                    {ref.authors}
+                    {authorsToDisplay(ref.authors)}
                   </p>
                 )}
 

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { documents, documentReferences } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { enrichReferences } from "@/lib/citations/semantic-scholar";
+import { authorStringToJson } from "@/lib/citations/author-utils";
 
 export async function POST(
   request: NextRequest,
@@ -64,7 +65,7 @@ export async function POST(
           .set({
             semanticScholarId: metadata.semanticScholarId,
             title: metadata.title,
-            authors: metadata.authors || null,
+            authors: authorStringToJson(metadata.authors),
             year: metadata.year,
             doi: metadata.doi,
             url: metadata.url,
