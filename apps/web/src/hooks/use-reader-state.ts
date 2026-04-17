@@ -16,13 +16,23 @@ interface ReaderState {
   setToolbarCollapsed: (v: boolean) => void;
 }
 
+function readToolbarCollapsed(): boolean {
+  try {
+    return (
+      typeof window !== "undefined" &&
+      window.localStorage?.getItem("toolbarCollapsed") === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 export const useReaderState = create<ReaderState>((set) => ({
   currentPage: 1,
   totalPages: 0,
   scrollTargetPage: null,
   zoom: 1.0,
-  toolbarCollapsed:
-    typeof window !== "undefined" && localStorage.getItem("toolbarCollapsed") === "1",
+  toolbarCollapsed: readToolbarCollapsed(),
   setCurrentPage: (page) =>
     set((s) => ({
       currentPage: Math.max(1, Math.min(s.totalPages || 1, page)),
@@ -40,8 +50,12 @@ export const useReaderState = create<ReaderState>((set) => ({
   resetZoom: () => set({ zoom: 1.0 }),
   setToolbarCollapsed: (v) => {
     set({ toolbarCollapsed: v });
-    if (typeof window !== "undefined") {
-      localStorage.setItem("toolbarCollapsed", v ? "1" : "0");
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage?.setItem("toolbarCollapsed", v ? "1" : "0");
+      }
+    } catch {
+      // ignore (e.g. test env without localStorage)
     }
   },
 }));
