@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Literal
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -8,6 +9,8 @@ from deps.db import ConnDep
 from lib.conversations import upsert_conversation, insert_message, bump_updated_at
 from lib.rag import retrieve
 from lib.chat import run_chat
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["chat"])
 
@@ -142,7 +145,7 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
             await insert_message(conn, conversation_id=conv_id, role="assistant", content=assistant_content)
             await bump_updated_at(conn, conv_id)
         except Exception:
-            pass  # best-effort persistence
+            logger.exception("failed to persist assistant turn (best-effort)")
 
     return StreamingResponse(event_stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "Connection": "keep-alive"})

@@ -58,7 +58,7 @@ async def run_chat(*, api_key: str, history: list[dict], question: str,
     ):
         if mode == "messages":
             chunk = payload[0] if isinstance(payload, tuple) else payload
-            if isinstance(chunk, AIMessageChunk) and chunk.content:
+            if isinstance(chunk, AIMessageChunk) and isinstance(chunk.content, str) and chunk.content:
                 yield ("token", chunk.content)
         elif mode == "updates":
             for node_state in (payload or {}).values():

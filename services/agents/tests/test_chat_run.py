@@ -71,3 +71,30 @@ async def test_run_chat_emits_tool_call_and_result():
     assert ("token", "thinking") in out
     assert ("tool_call", "search", {"q": "foo"}) in out
     assert ("tool_result", "search", "result-text") in out
+
+
+@pytest.mark.asyncio
+async def test_run_chat_skips_list_content_chunks():
+    """AIMessageChunk.content can be a list (e.g. tool-call blocks); must not yield as token."""
+    from langchain_core.messages import AIMessageChunk
+
+    events = [
+        ("messages", (AIMessageChunk(content="hello "), {})),
+        ("messages", (AIMessageChunk(content=[
+            {"type": "tool_use", "name": "search", "input": {"q": "foo"}, "id": "c1"},
+        ]), {})),
+        ("messages", (AIMessageChunk(content="world"), {})),
+    ]
+
+    with patch("lib.chat.create_agent", return_value=_fake_agent(events)):
+        out = []
+        async for ev in run_chat(
+            api_key="sk-test", history=[], question="hi",
+            supporting_chunks=[], page_text=None, anchor_text=None,
+            selection_text=None, scope="paper", focus_page=None, tools=None,
+        ):
+            out.append(ev)
+
+    token_events = [ev for ev in out if ev[0] == "token"]
+    assert token_events == [("token", "hello "), ("token", "world")]
+    assert all(isinstance(ev[1], str) for ev in token_events)
