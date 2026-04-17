@@ -122,6 +122,14 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
 
     # Lazy highlight-run context: populated only if the agent calls create_highlights.
     hl_ctx: dict = {"run_id": None, "highlights_inserted": 0, "summary": None}
+
+    HIGHLIGHT_TOOL_LABELS = {
+        "semantic_search": "Searching for passages\u2026",
+        "page_text": "Reading page\u2026",
+        "locate_phrase": "Locating phrase\u2026",
+        "create_highlights": "Creating highlights\u2026",
+        "finish": "Finishing up\u2026",
+    }
     pdf_path = doc["file_path"]
 
     async def ensure_run_id() -> str:
@@ -183,6 +191,14 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
                     token = event[1]
                     assistant_content += token
                     yield _sse({"type": "token", "content": token})
+                elif kind == "tool_call":
+                    name = event[1]
+                    if name in HIGHLIGHT_TOOL_LABELS:
+                        yield _sse({
+                            "type": "highlight_progress",
+                            "step": name,
+                            "label": HIGHLIGHT_TOOL_LABELS[name],
+                        })
                 elif kind == "tool_result":
                     # event: ("tool_result", name, content)
                     name = event[1]
@@ -197,7 +213,6 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
                             s = parsed.get("summary")
                             if s:
                                 hl_ctx["summary"] = str(s)
-                # tool_call events: ignored for now (Task 46 will surface them)
         except asyncio.CancelledError:
             await _mark_run_failed()
             raise
@@ -208,6 +223,14 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
             return
 
         await _finalize_run_completed()
+
+        if hl_ctx["run_id"] is not None:
+            yield _sse({
+                "type": "highlight_done",
+                "runId": hl_ctx["run_id"],
+                "count": hl_ctx["highlights_inserted"],
+            })
+
         yield _sse_done()
 
         # Persist assistant turn after stream

@@ -281,3 +281,136 @@ def test_chat_create_highlights_tool_call_inserts_run_and_finalizes():
             assert "Highlighted X." in args
     finally:
         app.dependency_overrides.clear()
+
+
+def test_chat_emits_highlight_progress_and_done_events():
+    """tool_call for create_highlights → highlight_progress event; run finalized → highlight_done."""
+    mock_conn = _mock_conn()
+    run_uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+    async def fetchrow_side_effect(sql, *args):
+        if "ai_highlight_runs" in sql:
+            return {"id": run_uuid}
+        if "agent_conversations" in sql:
+            return {"id": 1}
+        return {"id": 1, "processing_status": "ready", "file_path": "/tmp/fake.pdf"}
+
+    mock_conn.fetchrow.side_effect = fetchrow_side_effect
+
+    async def override():
+        yield mock_conn
+
+    app.dependency_overrides[deps.db.get_conn] = override
+
+    fake_retrieval = RetrievalResult(
+        supporting_chunks=[ChunkRow(1, "c", 3, 3, 0.85)],
+        page_text=None, anchor_text=None, sources=[],
+    )
+
+    captured = {}
+
+    def fake_build_tools(conn, user_id, document_id, get_run_id, api_key, pdf_path):
+        captured["fn"] = get_run_id
+        return []
+
+    async def fake_run_chat(**kwargs):
+        ensure = captured.get("fn")
+        if ensure is not None:
+            await ensure()
+        yield ("tool_call", "semantic_search", {"query": "x"})
+        yield ("tool_result", "semantic_search", {"matches": []})
+        yield ("tool_call", "create_highlights", {"matches": []})
+        yield ("tool_result", "create_highlights", {"inserted": 3, "total_in_run": 3, "capped": False})
+
+    try:
+        with (
+            patch("routers.chat.retrieve", return_value=fake_retrieval),
+            patch("routers.chat.run_chat", side_effect=fake_run_chat),
+            patch("routers.chat.build_tools", side_effect=fake_build_tools),
+        ):
+            body = json.dumps({"question": "highlight losses"}).encode()
+            r = client.post("/agents/chat", content=body,
+                           headers=_signed_headers("POST", "/agents/chat", body))
+            assert r.status_code == 200
+
+            events = _parse_sse(r.text)
+            progress = [e for e in events if isinstance(e, dict) and e.get("type") == "highlight_progress"]
+            steps = [e["step"] for e in progress]
+            assert "semantic_search" in steps
+            assert "create_highlights" in steps
+            assert all(e.get("label") for e in progress)
+
+            done = [e for e in events if isinstance(e, dict) and e.get("type") == "highlight_done"]
+            assert len(done) == 1
+            assert done[0]["runId"] == run_uuid
+            assert done[0]["count"] == 3
+            assert events[-1] == "[DONE]"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_chat_no_highlight_events_when_no_tool_calls():
+    """Only token events → no highlight_progress and no highlight_done."""
+    mock_conn = _mock_conn()
+
+    async def override():
+        yield mock_conn
+
+    app.dependency_overrides[deps.db.get_conn] = override
+
+    fake_retrieval = RetrievalResult(
+        supporting_chunks=[ChunkRow(1, "c", 3, 3, 0.85)],
+        page_text=None, anchor_text=None, sources=[],
+    )
+
+    async def fake_run_chat(**kwargs):
+        yield ("token", "hi")
+
+    try:
+        with (
+            patch("routers.chat.retrieve", return_value=fake_retrieval),
+            patch("routers.chat.run_chat", side_effect=fake_run_chat),
+        ):
+            body = json.dumps({"question": "?"}).encode()
+            r = client.post("/agents/chat", content=body,
+                           headers=_signed_headers("POST", "/agents/chat", body))
+            assert r.status_code == 200
+            events = _parse_sse(r.text)
+            assert not any(isinstance(e, dict) and e.get("type") == "highlight_progress" for e in events)
+            assert not any(isinstance(e, dict) and e.get("type") == "highlight_done" for e in events)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_chat_ignores_non_highlight_tool_calls_for_progress():
+    """tool_call for unrecognized tool name → no highlight_progress emitted."""
+    mock_conn = _mock_conn()
+
+    async def override():
+        yield mock_conn
+
+    app.dependency_overrides[deps.db.get_conn] = override
+
+    fake_retrieval = RetrievalResult(
+        supporting_chunks=[ChunkRow(1, "c", 3, 3, 0.85)],
+        page_text=None, anchor_text=None, sources=[],
+    )
+
+    async def fake_run_chat(**kwargs):
+        yield ("tool_call", "unknown_tool", {})
+        yield ("token", "ok")
+
+    try:
+        with (
+            patch("routers.chat.retrieve", return_value=fake_retrieval),
+            patch("routers.chat.run_chat", side_effect=fake_run_chat),
+        ):
+            body = json.dumps({"question": "?"}).encode()
+            r = client.post("/agents/chat", content=body,
+                           headers=_signed_headers("POST", "/agents/chat", body))
+            assert r.status_code == 200
+            events = _parse_sse(r.text)
+            assert not any(isinstance(e, dict) and e.get("type") == "highlight_progress" for e in events)
+            assert not any(isinstance(e, dict) and e.get("type") == "highlight_done" for e in events)
+    finally:
+        app.dependency_overrides.clear()

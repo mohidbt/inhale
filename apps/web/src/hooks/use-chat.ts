@@ -104,6 +104,10 @@ export function useChat(documentId: number) {
                 sources?: ChatSource[];
                 message?: string;
                 conversationId?: number;
+                step?: string;
+                label?: string;
+                runId?: string;
+                count?: number;
               };
               if (parsed.type === "sources" && parsed.sources) {
                 setSources(parsed.sources);
@@ -113,9 +117,34 @@ export function useChat(documentId: number) {
               } else if (parsed.type === "token" && parsed.content) {
                 setMessages((prev) => {
                   const updated = [...prev];
+                  const last = updated[updated.length - 1];
                   updated[updated.length - 1] = {
-                    role: "assistant",
-                    content: updated[updated.length - 1].content + parsed.content,
+                    ...last,
+                    content: last.content + parsed.content,
+                  };
+                  return updated;
+                });
+              } else if (parsed.type === "highlight_progress") {
+                const label = parsed.label || parsed.step;
+                if (label) {
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    updated[updated.length - 1] = {
+                      ...last,
+                      progressSteps: [...(last.progressSteps ?? []), label],
+                    };
+                    return updated;
+                  });
+                }
+              } else if (parsed.type === "highlight_done") {
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  updated[updated.length - 1] = {
+                    ...last,
+                    runId: parsed.runId,
+                    highlightsCount: parsed.count,
                   };
                   return updated;
                 });
