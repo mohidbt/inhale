@@ -134,31 +134,39 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
 
     pdf_path = doc["file_path"]
 
+    # Shared lock serializes all conn usage across tools + router paths, since
+    # OpenRouter may still emit parallel tool calls despite the kwarg hint and
+    # asyncpg connections are NOT concurrent-safe.
+    chat_conn_lock = asyncio.Lock()
+
     async def ensure_run_id() -> str:
         if hl_ctx["run_id"] is not None:
             return hl_ctx["run_id"]
-        row = await conn.fetchrow(
-            "INSERT INTO ai_highlight_runs "
-            "(document_id, user_id, instruction, status, conversation_id, model_used) "
-            "VALUES ($1, $2, $3, 'running', $4, $5) RETURNING id",
-            document_id, user_id, question, conv_id, CHAT_MODEL,
-        )
+        async with chat_conn_lock:
+            row = await conn.fetchrow(
+                "INSERT INTO ai_highlight_runs "
+                "(document_id, user_id, instruction, status, conversation_id, model_used) "
+                "VALUES ($1, $2, $3, 'running', $4, $5) RETURNING id",
+                document_id, user_id, question, conv_id, CHAT_MODEL,
+            )
         hl_ctx["run_id"] = str(row["id"])
         return hl_ctx["run_id"]
 
     highlight_tools = build_tools(
         conn, user_id, document_id, ensure_run_id, api_key, pdf_path,
+        conn_lock=chat_conn_lock,
     )
 
     async def _mark_run_failed():
         if hl_ctx["run_id"] is None:
             return
         try:
-            await conn.execute(
-                "UPDATE ai_highlight_runs SET status = 'failed', completed_at = now() "
-                "WHERE id = $1::uuid",
-                hl_ctx["run_id"],
-            )
+            async with chat_conn_lock:
+                await conn.execute(
+                    "UPDATE ai_highlight_runs SET status = 'failed', completed_at = now() "
+                    "WHERE id = $1::uuid",
+                    hl_ctx["run_id"],
+                )
         except Exception:
             logger.exception("failed to mark highlight run failed (best-effort)")
 
@@ -167,12 +175,13 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
             return
         summary = hl_ctx["summary"] or f"Created {hl_ctx['highlights_inserted']} highlights."
         try:
-            await conn.execute(
-                "UPDATE ai_highlight_runs "
-                "SET status = 'completed', completed_at = now(), summary = $2 "
-                "WHERE id = $1::uuid",
-                hl_ctx["run_id"], summary,
-            )
+            async with chat_conn_lock:
+                await conn.execute(
+                    "UPDATE ai_highlight_runs "
+                    "SET status = 'completed', completed_at = now(), summary = $2 "
+                    "WHERE id = $1::uuid",
+                    hl_ctx["run_id"], summary,
+                )
         except Exception:
             logger.exception("failed to finalize highlight run (best-effort)")
 

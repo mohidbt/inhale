@@ -102,12 +102,16 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
     run_id = str(run_row["id"])
 
     model = ChatOpenAI(
-        model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key, streaming=False, parallel_tool_calls=False
+        model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key, streaming=False
     )
     async def _get_run_id() -> str:
         return run_id
 
-    tools = build_tools(conn, user_id, document_id, _get_run_id, api_key, pdf_path)
+    conn_lock = asyncio.Lock()
+    tools = build_tools(
+        conn, user_id, document_id, _get_run_id, api_key, pdf_path,
+        conn_lock=conn_lock,
+    )
     agent = create_agent(model=model, tools=tools, system_prompt=SYSTEM_PROMPT)
 
     async def event_stream():
@@ -141,42 +145,46 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
         except asyncio.CancelledError:
             # Browser disconnect: best-effort mark row failed, then re-raise.
             try:
-                await conn.execute(
-                    "UPDATE ai_highlight_runs SET status = 'failed', completed_at = now() "
-                    "WHERE id = $1::uuid",
-                    run_id,
-                )
+                async with conn_lock:
+                    await conn.execute(
+                        "UPDATE ai_highlight_runs SET status = 'failed', completed_at = now() "
+                        "WHERE id = $1::uuid",
+                        run_id,
+                    )
             except Exception:
                 logger.exception("failed to mark highlight run failed (best-effort)")
             raise
         except Exception as e:  # noqa: BLE001
             error_msg = str(e)
 
-        highlights_count = int(
-            await conn.fetchval(
-                "SELECT COUNT(*) FROM user_highlights WHERE layer_id = $1::uuid",
-                run_id,
+        async with conn_lock:
+            highlights_count = int(
+                await conn.fetchval(
+                    "SELECT COUNT(*) FROM user_highlights WHERE layer_id = $1::uuid",
+                    run_id,
+                )
+                or 0
             )
-            or 0
-        )
 
         if error_msg is not None:
             yield _sse({"type": "error", "message": error_msg})
-            await conn.execute(
-                "UPDATE ai_highlight_runs SET status = 'failed', completed_at = now() "
-                "WHERE id = $1::uuid",
-                run_id,
-            )
+            async with conn_lock:
+                await conn.execute(
+                    "UPDATE ai_highlight_runs SET status = 'failed', completed_at = now() "
+                    "WHERE id = $1::uuid",
+                    run_id,
+                )
         else:
-            await conn.execute(
-                "UPDATE ai_highlight_runs "
-                "SET status = 'completed', completed_at = now(), "
-                "summary = $2, model_used = $3 "
-                "WHERE id = $1::uuid",
-                run_id,
-                summary or None,
-                CHAT_MODEL,
-            )
+            async with conn_lock:
+                await conn.execute(
+                    "UPDATE ai_highlight_runs "
+                    "SET status = 'completed', completed_at = now(), "
+                    "summary = $2, model_used = $3 "
+                    "WHERE id = $1::uuid",
+                    run_id,
+                    summary or None,
+                    CHAT_MODEL,
+                )
             yield _sse(
                 {
                     "type": "done",

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -31,13 +32,22 @@ def build_tools(
     get_run_id: Callable[[], Awaitable[str]],
     api_key: str,
     pdf_path: str,
+    conn_lock: asyncio.Lock | None = None,
 ) -> list:
     """Build the auto-highlight tool set with context closed over by each @tool.
 
     `get_run_id` is an async callable that returns the run_id. It is only
     awaited lazily on the first `create_highlights` call, and its result is
     cached for the remainder of the run.
+
+    `conn_lock` serializes access to the shared asyncpg `conn` across
+    concurrent tool calls (OpenRouter/OpenAI can emit parallel tool calls
+    despite `parallel_tool_calls=False`). If omitted, a new lock is created
+    internally for this tool set.
     """
+
+    if conn_lock is None:
+        conn_lock = asyncio.Lock()
 
     cached: str | None = None
 
@@ -66,16 +76,17 @@ def build_tools(
         `locate_phrase`.
         """
         vecs = await embed_texts(api_key, [query])
-        rows = await conn.fetch(
-            "SELECT id, content, page_start, page_end, "
-            "(1 - (embedding <=> $2::vector)) AS score "
-            "FROM document_chunks "
-            "WHERE document_id = $1 AND embedding IS NOT NULL "
-            "ORDER BY score DESC LIMIT $3",
-            document_id,
-            vecs[0],
-            top_k,
-        )
+        async with conn_lock:
+            rows = await conn.fetch(
+                "SELECT id, content, page_start, page_end, "
+                "(1 - (embedding <=> $2::vector)) AS score "
+                "FROM document_chunks "
+                "WHERE document_id = $1 AND embedding IS NOT NULL "
+                "ORDER BY score DESC LIMIT $3",
+                document_id,
+                vecs[0],
+                top_k,
+            )
         return [
             {
                 "chunk_id": r["id"],
@@ -161,36 +172,37 @@ def build_tools(
         `{capped: true}`.
         """
         run_id = await _run_id()
-        existing = await conn.fetchval(
-            "SELECT COUNT(*) FROM user_highlights WHERE layer_id = $1::uuid",
-            run_id,
-        )
-        existing = int(existing or 0)
-        remaining = MAX_HIGHLIGHTS_PER_RUN - existing
-        to_insert = matches[: max(0, remaining)]
-        capped = (
-            len(to_insert) < len(matches)
-            or (existing + len(to_insert)) >= MAX_HIGHLIGHTS_PER_RUN
-        )
-
-        for m in to_insert:
-            rects_json = json.dumps(m.get("rects", []))
-            await conn.execute(
-                "INSERT INTO user_highlights "
-                "(user_id, document_id, page_number, text_content, start_offset, "
-                "end_offset, color, source, layer_id, rects) "
-                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid, $10::jsonb)",
-                user_id,
-                document_id,
-                m["page_number"],
-                m["text_content"],
-                m["start_offset"],
-                m["end_offset"],
-                "amber",
-                "ai-auto",
+        async with conn_lock:
+            existing = await conn.fetchval(
+                "SELECT COUNT(*) FROM user_highlights WHERE layer_id = $1::uuid",
                 run_id,
-                rects_json,
             )
+            existing = int(existing or 0)
+            remaining = MAX_HIGHLIGHTS_PER_RUN - existing
+            to_insert = matches[: max(0, remaining)]
+            capped = (
+                len(to_insert) < len(matches)
+                or (existing + len(to_insert)) >= MAX_HIGHLIGHTS_PER_RUN
+            )
+
+            for m in to_insert:
+                rects_json = json.dumps(m.get("rects", []))
+                await conn.execute(
+                    "INSERT INTO user_highlights "
+                    "(user_id, document_id, page_number, text_content, start_offset, "
+                    "end_offset, color, source, layer_id, rects) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid, $10::jsonb)",
+                    user_id,
+                    document_id,
+                    m["page_number"],
+                    m["text_content"],
+                    m["start_offset"],
+                    m["end_offset"],
+                    "amber",
+                    "ai-auto",
+                    run_id,
+                    rects_json,
+                )
 
         total = existing + len(to_insert)
         return {"inserted": len(to_insert), "total_in_run": total, "capped": capped}
