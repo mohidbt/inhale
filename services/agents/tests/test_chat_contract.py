@@ -239,8 +239,18 @@ def test_chat_create_highlights_tool_call_inserts_run_and_finalizes():
         page_text=None, anchor_text=None, sources=[],
     )
 
+    captured_ensure_run_id = {}
+
+    def fake_build_tools(conn, user_id, document_id, get_run_id, api_key, pdf_path):
+        captured_ensure_run_id["fn"] = get_run_id
+        return []
+
     async def fake_run_chat(**kwargs):
-        # Simulate the agent emitting a create_highlights tool call + result.
+        # Simulate the agent calling create_highlights: the real tool awaits
+        # ensure_run_id internally, which inserts the run row.
+        ensure = captured_ensure_run_id.get("fn")
+        if ensure is not None:
+            await ensure()
         yield ("token", "ok")
         yield ("tool_call", "create_highlights", {"matches": []})
         yield ("tool_result", "create_highlights", {"inserted": 3, "total_in_run": 3, "capped": False})
@@ -251,13 +261,14 @@ def test_chat_create_highlights_tool_call_inserts_run_and_finalizes():
         with (
             patch("routers.chat.retrieve", return_value=fake_retrieval),
             patch("routers.chat.run_chat", side_effect=fake_run_chat),
+            patch("routers.chat.build_tools", side_effect=fake_build_tools),
         ):
             body = json.dumps({"question": "highlight losses"}).encode()
             r = client.post("/agents/chat", content=body,
                            headers=_signed_headers("POST", "/agents/chat", body))
             assert r.status_code == 200
 
-            # A run row was inserted
+            # A run row was inserted (by the tool, via ensure_run_id)
             assert any("INSERT INTO ai_highlight_runs" in s for s in fetchrow_calls)
 
             # The run was finalized (status='completed') via conn.execute

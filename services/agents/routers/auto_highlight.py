@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -13,6 +14,8 @@ from deps.db import ConnDep
 from lib.auto_highlight_tools import build_tools
 from lib.chat import CHAT_MODEL, OPENROUTER_BASE
 from lib.conversations import bump_updated_at, insert_message
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["auto-highlight"])
 
@@ -150,7 +153,7 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
                     run_id,
                 )
             except Exception:
-                pass
+                logger.exception("failed to mark highlight run failed (best-effort)")
             raise
         except Exception as e:  # noqa: BLE001
             error_msg = str(e)

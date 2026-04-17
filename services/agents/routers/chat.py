@@ -191,10 +191,6 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
                         parsed = _try_parse(content)
                         if isinstance(parsed, dict):
                             hl_ctx["highlights_inserted"] += int(parsed.get("inserted", 0) or 0)
-                        # Ensure the run row exists; the tool normally awaits this
-                        # via its ensure_run_id callback, but covering it here keeps
-                        # the router's state machine self-consistent.
-                        await ensure_run_id()
                     elif name == "finish":
                         parsed = _try_parse(content)
                         if isinstance(parsed, dict):

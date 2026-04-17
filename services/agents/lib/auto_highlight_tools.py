@@ -29,12 +29,13 @@ def build_tools(
     cached for the remainder of the run.
     """
 
-    cached_run_id: dict[str, str] = {}
+    cached: str | None = None
 
     async def _run_id() -> str:
-        if "v" not in cached_run_id:
-            cached_run_id["v"] = await get_run_id()
-        return cached_run_id["v"]
+        nonlocal cached
+        if cached is None:
+            cached = await get_run_id()
+        return cached
 
     @tool
     async def semantic_search(query: str, top_k: int = 8) -> list[dict]:
