@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect, notFound } from "next/navigation";
+import { after } from "next/server";
 import { db } from "@/db";
 import { documents } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -29,6 +30,13 @@ export default async function ReaderPage({
     .limit(1);
 
   if (!doc) notFound();
+
+  after(async () => {
+    await db
+      .update(documents)
+      .set({ lastOpenedAt: new Date() })
+      .where(and(eq(documents.id, doc.id), eq(documents.userId, session.user.id)));
+  });
 
   return (
     <ReaderClient
