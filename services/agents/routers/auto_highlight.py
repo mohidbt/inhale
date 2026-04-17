@@ -102,7 +102,7 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
     run_id = str(run_row["id"])
 
     model = ChatOpenAI(
-        model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key, streaming=False
+        model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key, streaming=False, parallel_tool_calls=False
     )
     async def _get_run_id() -> str:
         return run_id
