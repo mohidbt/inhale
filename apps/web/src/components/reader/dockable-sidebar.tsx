@@ -39,6 +39,7 @@ export function useSidebarDock(id: string, defaultDock: Dock = "right") {
 interface DockMenuProps {
   dock: Dock;
   onChange: (next: Dock) => void;
+  onClose?: () => void;
 }
 
 /**
@@ -48,9 +49,10 @@ interface DockMenuProps {
  * prop on each sidebar so the trigger lives in normal flow — no more
  * absolute positioning that overlaps the title.
  */
-export function DockMenu({ dock, onChange }: DockMenuProps) {
+export function DockMenu({ dock, onChange, onClose }: DockMenuProps) {
   return (
-    <details className="relative">
+    <div className="inline-flex items-center gap-0.5">
+      <details className="relative">
       <summary
         className="inline-flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
         aria-label="Dock position"
@@ -82,6 +84,18 @@ export function DockMenu({ dock, onChange }: DockMenuProps) {
           </button>
         ))}
       </div>
-    </details>
+      </details>
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          data-testid="sidebar-close"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      )}
+    </div>
   );
 }

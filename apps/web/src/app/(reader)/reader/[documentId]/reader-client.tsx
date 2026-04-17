@@ -539,7 +539,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   highlights={sidebarHighlights}
                   loading={highlightsLoading}
                   error={highlightsError}
-                  dockControl={<DockMenu dock={highlightsDock} onChange={setHighlightsDock} />}
+                  dockControl={<DockMenu dock={highlightsDock} onChange={setHighlightsDock} onClose={() => setSidebarOpen(false)} />}
                   onAskAi={(text, pageNumber) => {
                     setChatSeed({
                       text,
@@ -565,7 +565,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   scrollContainerRef={pdfScrollRef}
                   seed={chatSeed}
                   onClearSeed={() => setChatSeed(null)}
-                  dockControl={<DockMenu dock={chatDock} onChange={setChatDock} />}
+                  dockControl={<DockMenu dock={chatDock} onChange={setChatDock} onClose={() => setChatOpen(false)} />}
                   currentPage={currentPage}
                   processingStatus={processingStatus}
                 />
@@ -582,7 +582,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   pdfOutline={pdfOutline}
                   pdfDoc={pdfDoc}
                   onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
-                  dockControl={<DockMenu dock={outlineDock} onChange={setOutlineDock} />}
+                  dockControl={<DockMenu dock={outlineDock} onChange={setOutlineDock} onClose={() => setOutlineOpen(false)} />}
                 />
               ),
             });
@@ -598,7 +598,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   citations={citations}
                   loading={citationsLoading}
                   onExtracted={() => setCitationsRefreshKey((k) => k + 1)}
-                  dockControl={<DockMenu dock={citationsDock} onChange={setCitationsDock} />}
+                  dockControl={<DockMenu dock={citationsDock} onChange={setCitationsDock} onClose={() => setCitationsOpen(false)} />}
                 />
               ),
             });
@@ -614,7 +614,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   loading={highlightsLoading}
                   error={highlightsError}
                   onNavigate={(page) => useReaderState.getState().setScrollTargetPage(page)}
-                  dockControl={<DockMenu dock={commentsDock} onChange={setCommentsDock} />}
+                  dockControl={<DockMenu dock={commentsDock} onChange={setCommentsDock} onClose={() => setCommentsOpen(false)} />}
                   onAskAi={(text, pageNumber) => {
                     setChatSeed({
                       text,
