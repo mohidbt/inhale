@@ -68,5 +68,6 @@ describe("PATCH /api/documents/[id]", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.title).toBe("New Title");
+    expect(updateMock).toHaveBeenCalledOnce();
   });
 });
