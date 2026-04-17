@@ -224,45 +224,68 @@ CREATE TABLE ai_highlight_runs (
 
 ## 4. Phase 2.2 — Enriched Smart Citations (feature c)
 
-**Goal:** every citation surface shows full Semantic Scholar metadata with useful hyperlinks + Save-to-References action.
+> **Amended 2026-04-17.** Original §4 narrowed the S2 surface; this revision adds low-risk polish items (TL;DR, external-IDs, influence count, batched enrichment) and defers bigger UX bets (snippet preview, references/citations drawers) to Phase 3.1. See §8.
+
+**Goal:** every citation surface shows full Semantic Scholar metadata with useful hyperlinks + Save-to-References action, fetched via the batch API.
 
 ### 4.1 Schema extension
-Extend `document_references` (and/or joined `library_references`) with Semantic Scholar fields:
+Extend `document_references` and `library_references` with Semantic Scholar fields:
 ```
-external_id text,          -- S2 paperId
-title text,
-authors jsonb,             -- [{ name, authorId }]
-venue text,
-year int,
-citation_count int,
-open_access_pdf_url text,
-abstract text
+semantic_scholar_id text          -- existing; S2 paperId (legacy name kept)
+title text                        -- existing
+authors jsonb                     -- CHANGE from text: [{ name, authorId? }]
+venue text                        -- existing
+year text                         -- existing (kept as text — downstream compat)
+citation_count int                -- existing
+influential_citation_count int    -- ADD
+open_access_pdf_url text          -- ADD
+tldr_text text                    -- ADD; S2 `tldr.text` only
+abstract text                     -- existing
+external_ids jsonb                -- ADD; full externalIds object (DOI/ArXiv/PubMed/ACL/DBLP/PMC/MAG)
+bibtex text                       -- ADD; S2 `citationStyles.bibtex` if available (local fallback if null)
 ```
 
-### 4.2 Fetch strategy
-Lazy enrichment: on first open of Citations tab for a document (or first click of a citation marker), hit S2 Graph API `/paper/search` by title/DOI. Cache response on the row.
+Migration is additive except for `authors`; existing comma-separated strings migrate to `[{name: part}]` arrays inside a single transaction.
 
-Rate limiting: S2 public API ~1 req/sec unauthenticated. Queue enrichment; batch 10 with 500ms spacing. Optional S2 API key (BYOK, added to Settings) lifts limits.
+### 4.2 Fetch strategy — two-pass pipeline
 
-### 4.3 `CitationCard` component
-Single component rendered in two modes:
-- **Inline popover** (PDF marker click) — positioned popover anchored to marker rect.
-- **Compact list item** (Citations tab) — collapsed by default, expand for abstract.
+**Pass 1 — resolve paperIds.** For each row lacking `semantic_scholar_id`:
+- If row has a DOI: `GET /paper/DOI:{doi}?fields=paperId` (one request).
+- Else if row has a title: `GET /paper/search/match?query={title}&fields=paperId` (one request; 404 on no match).
+- Pace 500ms between requests (still sequential — rate limit is on unique requests, not ID count).
 
-Fields rendered:
-- Title — hyperlink to `semanticscholar.org/paper/{paperId}`, opens new tab.
-- Authors — each name hyperlinks to `/author/{authorId}`.
-- `Venue · Year · ⭐ {citationCount}` row.
-- Collapsible abstract.
-- Actions: **Save to References** · **Copy BibTeX** (uses S2 `citationStyles.bibtex` if available; local fallback) · **Open PDF** (shown when `openAccessPdfUrl`).
+**Pass 2 — batch metadata.** Collect all resolved paperIds for the document (≤500), then one `POST /paper/batch?fields=<list>` call. Write back full metadata on each row.
 
-### 4.4 Save-to-References flow
-Click **Save to References** → writes a `library_references` row (table exists from Phase 2.0 baseline — this phase extends the schema with the S2 metadata columns in §4.1). Scoped to user library. Toast "Saved — view in References". Button swaps to "Saved ✓".
+Field list for pass 2: `paperId,title,authors.name,authors.authorId,year,externalIds,openAccessPdf,citationStyles,tldr,venue,abstract,citationCount,influentialCitationCount,isOpenAccess`.
 
-### 4.5 Tests
-- **Unit:** S2 response → `CitationCard` props mapper; BibTeX formatter fallback.
-- **Integration (Playwright, mocked S2):** enrichment route populates expected fields.
-- **Chrome DevTools MCP e2e gate:** open Citations tab → card fields render → click Save → navigate to `/library/references` → saved citation appears → click `[n]` marker → inline popover renders same card. No 4xx/5xx.
+**Rate limiting.** S2 public pool ~1 req/sec shared. Optional BYOK `x-api-key` header lifts limits. Batch call counts as one request regardless of N.
+
+**Trigger.** Lazy enrichment: first open of Citations tab for a document, OR first click of a citation marker. After initial enrichment the document's refs are cached on rows; re-enrichment is manual (button in Citations tab).
+
+### 4.3 BYOK S2 API key
+
+Settings gains a "Semantic Scholar" row in the API-keys manager. Extend `userApiKeys.providerType` enum with a new value for reference enrichment (name per implementation plan). Key is encrypted and read server-side only. When present, enrichment route sends `x-api-key`; when absent, calls run unauthenticated.
+
+### 4.4 `CitationCard` component
+
+Single component, two variants: `popover` (anchored to marker click) and `compact` (full-width list item; collapsed-by-default abstract). All fields below render in both variants; popover truncates author count to 3 (`… +N`) for space.
+
+Fields (top → bottom):
+1. **Title** — hyperlinks to `https://www.semanticscholar.org/paper/{paperId}` when `paperId` present; plain text otherwise. Opens new tab.
+2. **Authors** — each `{name, authorId}` rendered as hyperlink to `https://www.semanticscholar.org/author/{authorId}` when `authorId` present; plain text otherwise.
+3. **Metrics line** — `Venue · Year · ⭐ {citationCount} ({influential} influential)` · OA badge when `isOpenAccess`. Elements hidden individually when missing.
+4. **TL;DR** — single italic line from `tldr_text` when present. Sits above the abstract.
+5. **Abstract** — collapsible (`Show abstract / Hide abstract` button). Full text when expanded, hidden when collapsed.
+6. **External-ID pill strip** — `externalIds` keys render as small pills (DOI, ArXiv, PubMed, ACL, DBLP, PMC). Each pill is a hyperlink: DOI→`doi.org/{x}`, ArXiv→`arxiv.org/abs/{x}`, PubMed→`pubmed.ncbi.nlm.nih.gov/{x}/`, ACL→`aclanthology.org/{x}`, DBLP→`dblp.org/rec/{x}`, PMC→`ncbi.nlm.nih.gov/pmc/articles/{x}`. Render only pills for IDs present.
+7. **Actions row** — `Save to References` (existing Keep-It flow is separate; see 4.5) · `Copy BibTeX` (uses stored `bibtex` field; if null, local fallback formatter from `{title, authors, year, venue}`) · `Open PDF` (shown only when `open_access_pdf_url` present; opens in new tab).
+
+### 4.5 Save-to-References flow
+Unchanged from original §4.4. `Save to References` writes a `library_references` row (per-user DOI upsert). Toast `"Saved — view in References"`. Button swaps to `In Library ✓`.
+
+### 4.6 Tests
+- **Unit:** (i) raw S2 response → row-shape mapper; (ii) BibTeX local fallback formatter; (iii) pass-1 + pass-2 orchestrator with mocked fetch (verifies single batch call for N ≥ 2 papers).
+- **Integration (Playwright, mocked S2):** enrichment route populates all new columns from a fixture response; `x-api-key` header present when BYOK key configured.
+- **Chrome DevTools MCP e2e gate:** open Citations tab → cards enrich → title/author/ext-ID links work in new tabs → TL;DR visible → abstract toggles → Copy BibTeX writes to clipboard → Save → `/library/references` shows saved card → click `[n]` marker → popover variant renders same fields. Zero 4xx/5xx; clean console.
 
 ---
 
@@ -367,7 +390,26 @@ ALTER TABLE agent_conversations
 
 ## 8. Phase 3.1 — External Links & Deep References
 
-**Unchanged from existing plan.** DOI/URL extraction from text layer; resolution via Semantic Scholar; related-paper suggestions. Migrated on top of the LangChain stack from 2.0.3. Details TBD at implementation-plan time.
+> **Amended 2026-04-17.** Scope expanded to absorb the higher-risk S2 features deferred from Phase 2.2 (snippet preview, references/citations drawers). Original scope (inline DOI/URL resolution) retained.
+
+**Goal:** make each `CitationCard` a spring-board for exploring the cited paper in place — read a targeted excerpt, browse what the cited paper itself cites, browse what cites it — plus resolve raw DOI/URL text found in the PDF body.
+
+### 8.1 Snippet preview on card expand
+When a user expands a `CitationCard`'s abstract, additionally issue `GET /snippet/search?paperId={id}&query=<text>&limit=1`, where `<text>` is ~200 chars of the passage surrounding the `[n]` marker click (or the Citations tab query box). Render the returned snippet below the abstract with a `From cited paper, matching your current passage` label. Cache per-(paperId, query-hash) on client for session.
+
+### 8.2 "References" drawer on card
+`CitationCard` gets a `References (N)` disclosure. When opened, fetch `GET /paper/{id}/references?fields=paperId,title,authors.name,year&limit=50`. Render each as a mini-card (title + authors + year; click expands into full `CitationCard` in popover mode).
+
+### 8.3 "Cited by" drawer on card
+Same as §8.2 but on `GET /paper/{id}/citations`. Shown after References in the card.
+
+### 8.4 Inline DOI / URL resolution (original 3.1 scope)
+Scan PDF text layer for bare DOIs (regex `10\.\d{4,9}/[-._;()/:A-Z0-9]+` case-insensitive) and common paper-host URLs (arxiv.org, aclanthology.org, pubmed). Wrap matches in an overlay that shows a compact `CitationCard` popover on click, using the S2 resolver.
+
+### 8.5 Tests
+- **Unit:** surrounding-text extractor; paperId → references/citations route-param builder.
+- **Integration (Playwright, mocked S2):** snippet endpoint hit with expected `query` param; references/citations drawers populate.
+- **Chrome DevTools MCP e2e gate:** expand a CitationCard → snippet renders → open References drawer → mini-cards render → click a mini-card → popover CitationCard renders → close → scan a PDF page with an inline DOI → click → popover renders. Zero 4xx/5xx.
 
 ---
 
@@ -379,7 +421,10 @@ ALTER TABLE agent_conversations
 
 ## 10. Phase 3.3 — BibTeX Export
 
-**Unchanged.** Leverages the per-reference BibTeX already produced by the `CitationCard` from Phase 2.2 — this phase adds bulk library export.
+**Amended 2026-04-17.** Per-reference BibTeX is now stored on the row (`bibtex` column) from Phase 2.2 §4.1. This phase becomes:
+- `/api/library/references/export.bib` — concatenates `bibtex` for all of the user's `library_references` rows; rows missing `bibtex` get the local fallback formatter. Returned as `text/x-bibtex; charset=utf-8` with `Content-Disposition: attachment`.
+- Button on `/library/references` page: `Export .bib`.
+- Per-document variant deferred.
 
 ---
 
