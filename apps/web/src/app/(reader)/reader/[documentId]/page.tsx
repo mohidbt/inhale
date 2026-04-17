@@ -4,7 +4,7 @@ import { redirect, notFound } from "next/navigation";
 import { after } from "next/server";
 import { db } from "@/db";
 import { documents } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { ReaderClient } from "./reader-client";
 
 export default async function ReaderPage({
@@ -34,8 +34,9 @@ export default async function ReaderPage({
   after(async () => {
     await db
       .update(documents)
-      .set({ lastOpenedAt: new Date() })
-      .where(and(eq(documents.id, doc.id), eq(documents.userId, session.user.id)));
+      .set({ lastOpenedAt: sql`now()` })
+      .where(and(eq(documents.id, doc.id), eq(documents.userId, session.user.id)))
+      .catch((err) => console.error("[reader] last_opened_at stamp failed", err));
   });
 
   return (
