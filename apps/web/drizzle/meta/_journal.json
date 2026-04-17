@@ -36,6 +36,13 @@
       "when": 1776115262987,
       "tag": "0004_drop_user_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776450048046,
+      "tag": "0005_library_last_opened",
+      "breakpoints": true
     }
   ]
 }
