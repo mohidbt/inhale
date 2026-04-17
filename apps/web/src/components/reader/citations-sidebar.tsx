@@ -18,6 +18,11 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
   const [extracting, setExtracting] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const enrichFiredRef = useRef(false);
+  // Keep latest callback in a ref so the enrich effect doesn't need it as a dep.
+  // Including an inline onExtracted in deps re-runs the effect on every parent
+  // render, causing double-fire of the enrich POST.
+  const onExtractedRef = useRef(onExtracted);
+  useEffect(() => { onExtractedRef.current = onExtracted; });
 
   // Reset enrich gate when document changes
   useEffect(() => {
@@ -40,7 +45,7 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
         return res.json();
       })
       .then(() => {
-        onExtracted?.();
+        onExtractedRef.current?.();
       })
       .catch((err) => {
         if (err.name === "AbortError") return;
@@ -52,7 +57,8 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
       });
 
     return () => controller.abort();
-  }, [open, citations, documentId, onExtracted]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, citations, documentId]);
 
   const handleExtract = useCallback(async () => {
     setExtracting(true);
