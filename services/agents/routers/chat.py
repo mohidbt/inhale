@@ -199,6 +199,7 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
                 tool_hints=[TOOLBELT_SYSTEM_HINT],
             ):
                 kind = event[0]
+                print(f"[IMPLICIT-DEBUG] router received event kind={kind} payload={str(event[1])[:80]!r}", flush=True)
                 if kind == "token":
                     token = event[1]
                     assistant_content += token

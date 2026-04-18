@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ViewportContext } from "./use-viewport-tracking";
 
 export interface ChatAttachment {
@@ -37,12 +37,23 @@ export interface ChatSendOptions {
   attachment?: ChatAttachment;
 }
 
-export function useChat(documentId: number) {
+export interface UseChatOptions {
+  onHighlightsChanged?: () => void;
+}
+
+export function useChat(documentId: number, options?: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sources, setSources] = useState<ChatSource[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<number | undefined>();
+
+  // Ref avoids re-creating sendMessage (and its stale closures) on every
+  // render when the caller passes an inline callback.
+  const onHighlightsChangedRef = useRef(options?.onHighlightsChanged);
+  useEffect(() => {
+    onHighlightsChangedRef.current = options?.onHighlightsChanged;
+  }, [options?.onHighlightsChanged]);
 
   const sendMessage = useCallback(
     async (
@@ -132,6 +143,7 @@ export function useChat(documentId: number) {
                     const last = updated[updated.length - 1];
                     updated[updated.length - 1] = {
                       ...last,
+                      kind: "auto-highlight-progress",
                       progressSteps: [...(last.progressSteps ?? []), label],
                     };
                     return updated;
@@ -143,11 +155,14 @@ export function useChat(documentId: number) {
                   const last = updated[updated.length - 1];
                   updated[updated.length - 1] = {
                     ...last,
+                    kind: "auto-highlight-result",
                     runId: parsed.runId,
                     highlightsCount: parsed.count,
+                    progressSteps: undefined,
                   };
                   return updated;
                 });
+                onHighlightsChangedRef.current?.();
               } else if (parsed.type === "error") {
                 setError(parsed.message ?? "Streaming error");
               }

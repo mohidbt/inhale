@@ -7,9 +7,42 @@ from difflib import SequenceMatcher
 
 import anyio
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field, ValidationError
 from pypdf import PdfReader
 
 from lib.openrouter_client import embed_texts
+
+
+class HighlightRect(BaseModel):
+    page: int = Field(description="1-indexed page number this rect lives on.")
+    x0: float = Field(description="Left edge, PDF page coords.")
+    y0: float = Field(description="Bottom edge, PDF page coords.")
+    x1: float = Field(description="Right edge, PDF page coords.")
+    y1: float = Field(description="Top edge, PDF page coords.")
+
+
+class HighlightMatch(BaseModel):
+    page_number: int = Field(description="1-indexed page number of the match.")
+    text_content: str = Field(
+        min_length=1, description="Exact text being highlighted (non-empty)."
+    )
+    start_offset: int = Field(description="Character start offset from locate_phrase.")
+    end_offset: int = Field(description="Character end offset from locate_phrase.")
+    rects: list[HighlightRect] = Field(
+        min_length=1,
+        description="Non-empty list of page-coord rects from locate_phrase.",
+    )
+
+
+class CreateHighlightsArgs(BaseModel):
+    matches: list[HighlightMatch] = Field(
+        min_length=1,
+        description=(
+            "Non-empty list of highlight matches. Each item must have "
+            "page_number, text_content, start_offset, end_offset, rects. "
+            "Do NOT call create_highlights with an empty list or no arguments."
+        ),
+    )
 
 MAX_HIGHLIGHTS_PER_RUN = 50
 MAX_LOCATE_HITS = 20
@@ -140,38 +173,48 @@ def build_tools(
         if not hits and os.environ.get("AUTO_HIGHLIGHT_FUZZY") == "1":
             hits = _find_fuzzy(text, phrase)
 
+        reader = PdfReader(pdf_path)
+        mb = reader.pages[page_number - 1].mediabox
+        page_x_max = float(mb.right)
         results = []
         for start, end in hits[:MAX_LOCATE_HITS]:
-            rect = _rect_for_span(fragments, start, end, page_number)
+            rects = _rect_for_span(fragments, start, end, page_number, page_x_max)
             results.append(
                 {
                     "start_offset": start,
                     "end_offset": end,
                     "text": text[start:end],
-                    "rects": [rect] if rect else [],
+                    "rects": rects,
                 }
             )
         return results
 
-    @tool
+    @tool(args_schema=CreateHighlightsArgs)
     async def create_highlights(matches: list[dict]) -> dict:
-        """Use this toolset only when the user explicitly asks to highlight / mark / annotate passages.
+        """Persist a batch of highlights. Use ONLY when the user explicitly asked to highlight / mark / annotate passages.
 
-        Examples:
-          YES — "Highlight the passages where the dataset is discussed"
-          YES — "Mark every mention of the attention mechanism"
-          NO  — "What's the methodology?" — answer inline, do NOT call this tool.
+        You MUST pass a non-empty `matches` list. Calling this tool with no
+        arguments, `matches=[]`, or `matches=null` is INVALID and will error.
+        Each match MUST contain: page_number, text_content, start_offset,
+        end_offset, rects (populated from locate_phrase results).
 
-        ---
+        If you have no matches to create, do NOT call this tool — respond
+        with prose instead. Do not use this tool as a "finish" signal;
+        call `finish` for that.
 
-        Persist a batch of highlight rows for the current run.
-
-        Each match: `{page_number, text_content, start_offset, end_offset,
-        rects}`. All inserts are tagged `source='ai-auto'`, `color='amber'`,
-        and `layer_id` of the run. Hard-capped at 50 highlights per run;
-        if the cap is hit mid-batch, inserts partial and returns
-        `{capped: true}`.
+        Inserts tagged source='ai-auto', color='amber', layer_id=run.
+        Hard-capped at 50/run; returns `{inserted, total_in_run, capped}`.
         """
+        if not matches:
+            return {
+                "error": (
+                    "ERROR: create_highlights requires a non-empty 'matches' list. "
+                    "Each match needs page_number, text_content, start_offset, "
+                    "end_offset, rects. If you have no matches, do not call this tool."
+                )
+            }
+        # args_schema may pass pydantic models; normalize to dicts for DB access.
+        matches = [m.model_dump() if isinstance(m, BaseModel) else m for m in matches]
         run_id = await _run_id()
         async with conn_lock:
             existing = await conn.fetchval(
@@ -216,6 +259,17 @@ def build_tools(
         """
         return {"summary": summary, "done": True}
 
+    def _on_validation_error(err: ValidationError) -> str:
+        return (
+            "ERROR: create_highlights requires a non-empty 'matches' list. "
+            "Each match needs page_number, text_content, start_offset, "
+            "end_offset, rects (from locate_phrase). If you have no matches "
+            "to create, do not call this tool — respond with prose instead. "
+            f"Details: {err.errors(include_url=False, include_input=False)}"
+        )
+
+    create_highlights.handle_validation_error = _on_validation_error
+
     return [semantic_search, page_text, locate_phrase, create_highlights, finish]
 
 
@@ -241,11 +295,16 @@ def _extract_with_positions(pdf_path: str, page_number: int):
         nonlocal cursor
         if not text:
             return
-        # pypdf passes the operand text with trailing "\n" for line breaks,
-        # which matches what extract_text() assembles. We mirror that layout.
-        fragments.append(
-            (text, cursor, float(tm[4]), float(tm[5]), float(font_size or 10.0))
-        )
+        # Effective glyph size = stated font_size × |tm[0]| × |cm[0]|.
+        # Most PDFs encode size in the text-matrix scale with font_size=1,
+        # so using the reported font_size alone yields 6x1 slivers.
+        stated = float(font_size or 1.0)
+        tm_scale = abs(float(tm[0])) if tm else 1.0
+        cm_scale = abs(float(cm[0])) if cm else 1.0
+        eff_size = stated * tm_scale * cm_scale
+        if eff_size < 2.0:
+            eff_size = 10.0
+        fragments.append((text, cursor, float(tm[4]), float(tm[5]), eff_size))
         parts.append(text)
         cursor += len(text)
 
@@ -279,27 +338,47 @@ def _find_fuzzy(
     return hits
 
 
-def _rect_for_span(fragments, start: int, end: int, page_number: int) -> dict | None:
-    """Line-level rect: bbox spanning from the first fragment that overlaps
-    `start` to the last fragment that overlaps `end`. Width is approximated
-    from font_size × chars since pypdf doesn't expose glyph widths here.
+def _rect_for_span(
+    fragments, start: int, end: int, page_number: int, page_x_max: float = 1e9
+) -> list[dict]:
+    """Return one rect per line the span covers. Width is approximated from
+    font_size × chars (0.5) since pypdf doesn't expose glyph widths.
+
+    Fragments with the same y are grouped into a line; each line produces one
+    rect. This avoids the "giant block" bug when a hit straddles fragments on
+    different lines. Rects are clamped to the page mediabox on the right.
     """
     overlapping = [f for f in fragments if f[1] < end and (f[1] + len(f[0])) > start]
     if not overlapping:
-        return None
-    first = overlapping[0]
-    last = overlapping[-1]
-    # Approximate char width as 0.5 * font_size (serif/typical ratio).
-    _, first_cur, fx, fy, fsz = first
-    _, last_cur, lx, ly, lsz = last
-    offset_into_first = max(0, start - first_cur)
-    x0 = fx + offset_into_first * fsz * 0.5
-    # Upper y-edge: line baseline + font size (PDF origin is bottom-left).
-    y1 = max(fy, ly) + max(fsz, lsz)
-    y0 = min(fy, ly)
-    # end relative to last fragment's own run
-    offset_into_last_end = max(0, end - last_cur)
-    x1 = lx + offset_into_last_end * lsz * 0.5
-    if x1 <= x0:
-        x1 = x0 + fsz * 0.5
-    return {"page": page_number, "x0": x0, "y0": y0, "x1": x1, "y1": y1}
+        return []
+    # Group overlapping fragments by y (line).
+    lines: list[list] = []
+    for f in overlapping:
+        if lines and abs(lines[-1][-1][3] - f[3]) < 0.5:
+            lines[-1].append(f)
+        else:
+            lines.append([f])
+    rects: list[dict] = []
+    for line in lines:
+        first = line[0]
+        last = line[-1]
+        _, first_cur, fx, fy, fsz = first
+        _, last_cur, lx, _, lsz = last
+        line_start = max(start, first_cur)
+        line_end = min(end, last_cur + len(last[0]))
+        x0 = fx + max(0, line_start - first_cur) * fsz * 0.5
+        x1 = lx + max(0, line_end - last_cur) * lsz * 0.5
+        if x1 <= x0:
+            x1 = x0 + fsz * 0.5
+        x0 = min(x0, page_x_max)
+        x1 = min(x1, page_x_max)
+        rects.append(
+            {
+                "page": page_number,
+                "x0": x0,
+                "y0": fy,
+                "x1": x1,
+                "y1": fy + max(fsz, lsz),
+            }
+        )
+    return rects

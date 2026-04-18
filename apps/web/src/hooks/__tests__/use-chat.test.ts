@@ -32,7 +32,7 @@ describe("useChat SSE parsing", () => {
     vi.restoreAllMocks();
   });
 
-  it("captures highlight_progress steps and highlight_done fields on the assistant message", async () => {
+  it("flips assistant message kind to auto-highlight-result on highlight_done and fires onHighlightsChanged", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -46,7 +46,8 @@ describe("useChat SSE parsing", () => {
       ),
     );
 
-    const { result } = renderHook(() => useChat(1));
+    const onHighlightsChanged = vi.fn();
+    const { result } = renderHook(() => useChat(1, { onHighlightsChanged }));
     await act(async () => {
       await result.current.sendMessage("q", viewport);
     });
@@ -56,14 +57,15 @@ describe("useChat SSE parsing", () => {
     const last = result.current.messages[result.current.messages.length - 1];
     expect(last.role).toBe("assistant");
     expect(last.content).toBe("Hi");
-    expect(last.progressSteps).toEqual(["Searching…", "Creating highlights…"]);
+    expect(last.kind).toBe("auto-highlight-result");
     expect(last.runId).toBe("run-xyz");
     expect(last.highlightsCount).toBe(4);
-    // kind stays undefined (regular chat message)
-    expect(last.kind).toBeUndefined();
+    // progressSteps cleared on done (matches slash-command UX; result branch does not render them).
+    expect(last.progressSteps).toBeUndefined();
+    expect(onHighlightsChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to step name when label missing", async () => {
+  it("sets kind to auto-highlight-progress while streaming, before highlight_done arrives", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -81,6 +83,7 @@ describe("useChat SSE parsing", () => {
     await waitFor(() => expect(result.current.streaming).toBe(false));
 
     const last = result.current.messages[result.current.messages.length - 1];
+    expect(last.kind).toBe("auto-highlight-progress");
     expect(last.progressSteps).toEqual(["finish"]);
   });
 

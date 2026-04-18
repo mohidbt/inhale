@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -20,6 +21,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["auto-highlight"])
 
 AGENT_RECURSION_LIMIT = 25  # max tool-call depth before agent aborts
+IDLE_TIMEOUT_S = 60  # max seconds between stream updates before we give up
+TOTAL_TIMEOUT_S = 300  # hard wall-clock ceiling per run (5 minutes)
 
 SYSTEM_PROMPT = (
     "You create highlights on a single PDF based on the user's instruction.\n"
@@ -119,12 +122,36 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
 
         summary = ""
         error_msg: str | None = None
+        iterator = agent.astream(
+            {"messages": [{"role": "user", "content": instruction}]},
+            config={"recursion_limit": AGENT_RECURSION_LIMIT},
+            stream_mode="updates",
+        ).__aiter__()
+        start = time.monotonic()
         try:
-            async for update in agent.astream(
-                {"messages": [{"role": "user", "content": instruction}]},
-                config={"recursion_limit": AGENT_RECURSION_LIMIT},
-                stream_mode="updates",
-            ):
+            while True:
+                remaining = TOTAL_TIMEOUT_S - (time.monotonic() - start)
+                if remaining <= 0:
+                    error_msg = (
+                        f"agent exceeded {TOTAL_TIMEOUT_S}s wall-clock limit"
+                    )
+                    break
+                step_timeout = min(IDLE_TIMEOUT_S, remaining)
+                try:
+                    update = await asyncio.wait_for(
+                        iterator.__anext__(), timeout=step_timeout
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    if time.monotonic() - start >= TOTAL_TIMEOUT_S:
+                        error_msg = (
+                            f"agent exceeded {TOTAL_TIMEOUT_S}s wall-clock limit"
+                        )
+                    else:
+                        error_msg = "timed out waiting for agent"
+                    break
+
                 # update shape: {"<node_name>": {"messages": [...], ...}}
                 for node_name, node_state in update.items():
                     if node_name != "model":
@@ -143,7 +170,12 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
                             if name == "finish":
                                 summary = str(args.get("summary", "")) or summary
         except asyncio.CancelledError:
-            # Browser disconnect: best-effort mark row failed, then re-raise.
+            # Browser disconnect: cancel the underlying agent generator, mark row
+            # failed (best-effort), then re-raise so FastAPI tears down cleanly.
+            try:
+                await iterator.aclose()
+            except Exception:
+                logger.exception("failed to close agent iterator on cancel")
             try:
                 async with conn_lock:
                     await conn.execute(
@@ -156,6 +188,15 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
             raise
         except Exception as e:  # noqa: BLE001
             error_msg = str(e)
+
+        # Timeout path: ensure the agent coroutine is actually cancelled, not
+        # left pinning a worker. aclose() drives CancelledError into the
+        # generator's current await point.
+        if error_msg is not None:
+            try:
+                await iterator.aclose()
+            except Exception:
+                logger.exception("failed to close agent iterator after timeout")
 
         async with conn_lock:
             highlights_count = int(

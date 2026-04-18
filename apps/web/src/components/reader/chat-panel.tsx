@@ -86,7 +86,7 @@ export function ChatPanel({
     sendMessage,
     clearMessages,
     loadConversation,
-  } = useChat(documentId);
+  } = useChat(documentId, { onHighlightsChanged });
   const { runAutoHighlight, running: autoHighlightRunning } = useAutoHighlight(documentId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
