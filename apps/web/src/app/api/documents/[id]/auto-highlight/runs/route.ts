@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { aiHighlightRuns, documents, userHighlights } from "@/db/schema";
-import { and, eq, desc, count } from "drizzle-orm";
+import { and, eq, desc, count, inArray } from "drizzle-orm";
 import { isStaleRect } from "@/lib/highlight-rects";
 
 export async function GET(
@@ -64,7 +64,12 @@ export async function GET(
           rects: userHighlights.rects,
         })
         .from(userHighlights)
-        .where(eq(userHighlights.userId, session.user.id));
+        .where(
+          and(
+            eq(userHighlights.userId, session.user.id),
+            inArray(userHighlights.layerId, runIds)
+          )
+        );
       for (const h of rectRows) {
         if (!h.layerId) continue;
         if (staleByRun.get(h.layerId)) continue;

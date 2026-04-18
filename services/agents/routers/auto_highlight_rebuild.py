@@ -60,7 +60,7 @@ async def rebuild_run(run_id: str, auth: InternalAuthDep, conn: ConnDep) -> dict
 
     updated = 0
     skipped = 0
-    reader = PdfReader(pdf_path)
+    reader = await anyio.to_thread.run_sync(lambda: PdfReader(pdf_path))
 
     for page_number, page_rows in by_page.items():
         try:
