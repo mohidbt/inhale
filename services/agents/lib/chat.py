@@ -8,7 +8,7 @@ from lib.rag import ChunkRow
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 CHAT_MODEL = "openai/gpt-4o-mini"
 
-AGENT_RECURSION_LIMIT = 25
+AGENT_RECURSION_LIMIT = 40
 
 
 def _build_system_prompt(supporting_chunks: list[ChunkRow], page_text: str | None,

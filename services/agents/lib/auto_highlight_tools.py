@@ -16,12 +16,13 @@ MAX_LOCATE_HITS = 20
 
 TOOLBELT_SYSTEM_HINT = (
     "When the user explicitly asks to highlight / mark / annotate passages, use the highlight toolset:\n"
-    "  1. `semantic_search` to find candidate passages.\n"
-    "  2. `page_text` for context + `locate_phrase` for exact offsets and rects.\n"
-    "  3. `create_highlights` with the batch of matches (map locate_phrase results to "
-    "`{page_number, text_content, start_offset, end_offset, rects}`). This is the commit step.\n"
-    "  4. `finish` with a 1-2 sentence summary.\n"
-    "Cap: 50 highlights per run. Do not repeat highlights. Call `finish` exactly once."
+    "  1. `semantic_search` ONCE to find candidate passages.\n"
+    "  2. For each top candidate, call `page_text` then `locate_phrase` for exact offsets and rects.\n"
+    "  3. `create_highlights` ONCE with the full batch of matches (map locate_phrase results to "
+    "`{page_number, text_content, start_offset, end_offset, rects}`).\n"
+    "  4. `finish` with a 1-2 sentence summary. ALWAYS call `finish` after `create_highlights`.\n"
+    "Cap: 50 highlights per run. Do not loop — one search, one batch, then finish. "
+    "If `create_highlights` returns `capped: true` or inserted 0, call `finish` immediately."
 )
 
 
