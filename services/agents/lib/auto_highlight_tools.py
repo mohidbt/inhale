@@ -293,8 +293,10 @@ def _extract_with_positions(pdf_path: str, page_number: int):
       - `eff_size` — effective font size in pts
       - `glyphs` — a list aligned to the fragment text; each entry is either
         the pdfplumber char dict for that character or `None` when no
-        plumber match exists (e.g. synthesised `\n` from pypdf, or XObject
-        duplicates that pdfplumber does not render)
+        plumber match exists (synthesised `\n`/whitespace in the pypdf
+        stream, or the rare XObject duplicate pdfplumber does not render).
+        On the chemosensory fixture this fallback fires on <0.5% of chars
+        after the whitespace-insensitive matcher in `_match_fragment_glyphs`.
     """
     reader = PdfReader(pdf_path)
     if page_number < 1 or page_number > len(reader.pages):
@@ -334,21 +336,29 @@ def _match_fragment_glyphs(
 ) -> list:
     """Locate the pdfplumber chars for a pypdf text fragment.
 
-    Find a contiguous run in `plumber_chars` whose text matches `text`
-    glyph-for-glyph (skipping python-only characters like `\\n`). Prefer
-    a run whose y0 is within ~6pt of the pypdf baseline `origin_y`; if
-    that fails, accept any exact text match. Returns a list aligned to
-    `text`: entry `i` is the plumber char for `text[i]`, or `None` when
-    there is no match (fragment is pypdf-only, or the glyph is
-    synthesised whitespace).
+    Find a contiguous run in `plumber_chars` whose non-whitespace text
+    matches `text`'s non-whitespace text glyph-for-glyph. pypdf and
+    pdfplumber tokenize whitespace differently (e.g. pypdf inserts a
+    space before a superscript where plumber sees none), so matching
+    strictly on every glyph would drop entire multi-word fragments into
+    the approximation fallback. We compare only the non-whitespace
+    glyphs and map each back to its original position in `text`.
+
+    Prefer a run whose y0 is within ~6pt of the pypdf baseline
+    `origin_y`; among ties, prefer the one whose x0 is closest to
+    `origin_x`. Returns a list aligned to `text`: entry `i` is the
+    plumber char for `text[i]`, or `None` when there is no match
+    (e.g. synthesised newline in `text`, or whitespace that doesn't
+    exist in the plumber stream).
     """
     n = len(plumber_chars)
     tlen = len(text)
-    # Strip python-only chars from candidate needle, remember their positions.
+
+    # Needle: non-whitespace chars from pypdf text, with their indices in `text`.
     needle_indices: list[int] = []
     needle: list[str] = []
     for i, ch in enumerate(text):
-        if ch in ("\n", "\r"):
+        if ch.isspace():
             continue
         needle_indices.append(i)
         needle.append(ch)
@@ -356,35 +366,53 @@ def _match_fragment_glyphs(
         return [None] * tlen
     nl = len(needle)
 
-    def _pack(start: int) -> list:
+    # Haystack: precompute non-whitespace char indices in plumber_chars so we
+    # can compare non-whitespace glyph-for-glyph while still returning the
+    # real plumber char refs (whitespace included) to the caller.
+    hay_nonws: list[int] = []
+    for i, c in enumerate(plumber_chars):
+        t = c.get("text") or ""
+        if t and not t.isspace():
+            hay_nonws.append(i)
+    hn = len(hay_nonws)
+
+    def _pack(hay_start_nonws: int) -> list:
+        """Map each needle index → plumber char at the corresponding
+        non-whitespace position in the haystack."""
         out: list = [None] * tlen
         for k, ni in enumerate(needle_indices):
-            out[ni] = plumber_chars[start + k]
+            out[ni] = plumber_chars[hay_nonws[hay_start_nonws + k]]
         return out
 
-    near_hits: list[int] = []
+    near_hits: list[int] = []  # indices into hay_nonws
     any_hits: list[int] = []
-    for start in range(n - nl + 1):
+    for s in range(hn - nl + 1):
         ok = True
         for k in range(nl):
-            if plumber_chars[start + k].get("text") != needle[k]:
+            if plumber_chars[hay_nonws[s + k]].get("text") != needle[k]:
                 ok = False
                 break
         if not ok:
             continue
-        any_hits.append(start)
-        if abs(plumber_chars[start]["y0"] - origin_y) < 6.0:
-            near_hits.append(start)
+        any_hits.append(s)
+        if abs(plumber_chars[hay_nonws[s]]["y0"] - origin_y) < 6.0:
+            near_hits.append(s)
 
     if near_hits:
-        # If multiple y-aligned runs exist, prefer the one whose x0 is
-        # closest to the pypdf origin.
         best = min(
-            near_hits, key=lambda s: abs(plumber_chars[s]["x0"] - origin_x)
+            near_hits,
+            key=lambda s: abs(plumber_chars[hay_nonws[s]]["x0"] - origin_x),
         )
         return _pack(best)
     if any_hits:
-        return _pack(any_hits[0])
+        best = min(
+            any_hits,
+            key=lambda s: (
+                abs(plumber_chars[hay_nonws[s]]["y0"] - origin_y),
+                abs(plumber_chars[hay_nonws[s]]["x0"] - origin_x),
+            ),
+        )
+        return _pack(best)
     return [None] * tlen
 
 
@@ -422,12 +450,14 @@ def _rect_for_span(
     Each fragment is `(cursor, origin, eff_size, glyphs)`; `glyphs[i]` is
     the pdfplumber char dict for `text[cursor + i]` or `None`. Matched
     glyphs contribute their real per-glyph bboxes. A fragment with no
-    plumber matches (e.g. duplicated XObject content that pdfplumber
-    skips) falls back to a synthetic bbox anchored at pypdf's origin
-    with `eff_size × 0.5` per-char advance — only hit by pypdf-only
-    spans; the accuracy-critical tests use phrases that always match
-    plumber. Boxes are grouped into y-bands (±0.5pt jitter) and each
-    band yields one rect, clamped to `page_x_max` on the right.
+    plumber matches falls back to a synthetic bbox anchored at pypdf's
+    origin with `eff_size × 0.5` per-char advance. After the
+    whitespace-insensitive matcher in `_match_fragment_glyphs`, this
+    fallback fires on <0.5% of chars on the chemosensory fixture
+    (duplicated XObject content pdfplumber skips, or rare edge cases
+    where no run of plumber glyphs aligns with the pypdf fragment).
+    Boxes are grouped into y-bands (±0.5pt jitter) and each band
+    yields one rect, clamped to `page_x_max` on the right.
     """
     if start >= end:
         return []

@@ -234,6 +234,58 @@ def test_rect_width_matches_truth(pypdf_reader):
     )
 
 
+def test_rect_matches_truth_for_fallback_prone_phrase(pypdf_reader):
+    """Regression guard: phrases that land in pypdf↔pdfplumber tokenization
+    mismatches (whitespace around superscripts, etc.) must still emit rects
+    within ±3pt of pdfplumber truth — not silently drop into the fsz × 0.5
+    fallback.
+
+    Fixture page 2 contains 'signalling dynamics' with a superscript '25'
+    immediately after. pypdf's visitor_text surfaces a space before '25'
+    whereas pdfplumber reads the glyph stream with no space, so the whole
+    73-char pypdf fragment previously failed the contiguous glyph-match
+    and dropped into the fallback branch (drift ~+16pt on x0).
+    """
+    page_num = 2
+    phrase = "signalling dynamics"
+
+    with pdfplumber.open(str(FIXTURE)) as pdf:
+        page = pdf.pages[page_num - 1]
+        truth = _truth_bboxes(page, phrase)
+
+    text, frags = _extract_with_positions(str(FIXTURE), page_num)
+    hits = _find_exact(text, phrase)
+    assert hits, f"fixture invariant: {phrase!r} should exist on page {page_num}"
+    assert truth, f"pdfplumber truth should find {phrase!r} on page {page_num}"
+
+    mb = pypdf_reader.pages[page_num - 1].mediabox
+    page_x_max = float(mb.right)
+
+    drifts = []
+    for (s, e) in hits:
+        rects = _rect_for_span(frags, s, e, page_num, page_x_max)
+        for r in rects:
+            best = _pair_by_y(r, truth)
+            if best is None:
+                continue
+            dx = r["x0"] - best["x0"]
+            dy = r["y0"] - best["y0"]
+            drifts.append(
+                (r["x0"], best["x0"], dx, r["y0"], best["y0"], dy)
+            )
+
+    over = [d for d in drifts if abs(d[2]) > X_TOL or abs(d[5]) > Y_TOL]
+    msg_lines = [
+        f"prod=({px:.2f},{py:.2f}) truth=({tx:.2f},{ty:.2f}) "
+        f"dx={dx:+.2f} dy={dy:+.2f}"
+        for (px, tx, dx, py, ty, dy) in drifts
+    ]
+    assert not over, (
+        f"{len(over)}/{len(drifts)} rects drift past ±{X_TOL}pt from "
+        f"pdfplumber truth:\n" + "\n".join(msg_lines)
+    )
+
+
 def test_multiline_span_yields_per_line_rects(pypdf_reader):
     """A span that crosses fragments on different y-values must emit at least
     two rects with non-overlapping y-bands.
