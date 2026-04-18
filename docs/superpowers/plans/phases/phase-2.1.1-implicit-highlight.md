@@ -149,7 +149,7 @@ Run pytest, confirm all three fail for the **expected** reason (wrong x, overflo
 
 ### 51 — Regression fixture + assertions
 
-New `services/agents/tests/test_auto_highlight_rects.py` + trimmed 4-page fixture (`tests/fixtures/chemosensory.pdf`, <500KB) carved from `4d5b8a02-…`. Fixture loads once per module.
+New `services/agents/tests/test_auto_highlight_rects.py` + trimmed 4-page fixture (`tests/fixtures/chemosensory.pdf`, ~1.2MB; pages carry embedded figures so `<500KB` wasn't achievable, and further trimming would lose coverage) carved from `4d5b8a02-…`. Fixture loads once per module.
 
 Assertions (all parametrized over pages 1, 2, 5, 21):
 - `(x0, y0)` within ±3pt of pdfplumber truth bbox (built from `page.chars` at test-setup time).

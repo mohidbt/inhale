@@ -9,6 +9,11 @@ The production pipeline uses pypdf's `visitor_text` (line-level fragments)
 and approximates per-char advance as `fsz * 0.5`, which drifts by 10–30pt
 on long offsets and can land on the wrong column entirely in multi-column
 PDFs.
+
+Fixture page mapping: `tests/fixtures/chemosensory.pdf` is a trimmed
+4-page carve of the original source. Fixture pages 1, 2, 3, 4 correspond
+to source pages 1, 2, 5, 21 (the plan refers to the source page numbers;
+iteration in these tests uses the trimmed 1..4 indices).
 """
 
 import os
@@ -101,13 +106,6 @@ def _pair_by_y(prod_rect, truth_bboxes):
 
 
 @pytest.fixture(scope="module")
-def pdf_pages():
-    assert FIXTURE.exists(), f"fixture missing: {FIXTURE}"
-    with pdfplumber.open(str(FIXTURE)) as pdf:
-        yield [p for p in pdf.pages]
-
-
-@pytest.fixture(scope="module")
 def pypdf_reader():
     return PdfReader(str(FIXTURE))
 
@@ -120,6 +118,7 @@ def test_rect_matches_pdfplumber_truth(pypdf_reader):
     drifts = []  # (page, prod_x0, truth_x0, dx, prod_y0, truth_y0, dy)
 
     with pdfplumber.open(str(FIXTURE)) as pdf:
+        # Fixture pages 1..4 correspond to source pages 1, 2, 5, 21.
         for pno in range(1, 5):
             page = pdf.pages[pno - 1]
             truth = _truth_bboxes(page, TARGET)
@@ -152,20 +151,56 @@ def test_rect_matches_pdfplumber_truth(pypdf_reader):
     )
 
 
-def test_rect_no_overflow_mediabox(pypdf_reader):
-    """Every rect must fit the mediabox AND match pdfplumber's truth width
-    within ±5pt.
+def test_rect_within_mediabox(pypdf_reader):
+    """Every rect must fit inside the page mediabox.
 
-    The width bound is the crisp failure signal: the pypdf approximation
-    uses `fsz × 0.5 × char_count`, which ignores real glyph advance
-    widths. On narrow-glyph fonts (e.g. italic small caps) the 0.5 factor
-    over-estimates; on wide fonts it under-estimates. Either way,
-    production widths diverge from pdfplumber truth by >5pt on most
-    chemosensory occurrences in this fixture.
+    Guards against the clamp regressing. x1 must not exceed
+    mediabox.right and y1 must not exceed mediabox.top.
     """
     violations = []
 
     with pdfplumber.open(str(FIXTURE)) as pdf:
+        # Fixture pages 1..4 correspond to source pages 1, 2, 5, 21.
+        for pno in range(1, 5):
+            mb = pypdf_reader.pages[pno - 1].mediabox
+            page_x_max = float(mb.right)
+            page_y_max = float(mb.top)
+            text, frags = _extract_with_positions(str(FIXTURE), pno)
+            hits = _find_exact(text, TARGET)
+            for (s, e) in hits:
+                rects = _rect_for_span(frags, s, e, pno, page_x_max)
+                for r in rects:
+                    if r["x1"] > page_x_max + 0.01:
+                        violations.append(
+                            f"page {pno}: x1={r['x1']:.2f} > "
+                            f"mediabox.right={page_x_max:.2f}"
+                        )
+                    if r["y1"] > page_y_max + 0.01:
+                        violations.append(
+                            f"page {pno}: y1={r['y1']:.2f} > "
+                            f"mediabox.top={page_y_max:.2f}"
+                        )
+
+    assert not violations, (
+        "mediabox violations:\n" + "\n".join(violations)
+    )
+
+
+def test_rect_width_matches_truth(pypdf_reader):
+    """Every rect width must match pdfplumber's truth width within ±5pt AND
+    satisfy the `char_count * 2pt` floor from the plan.
+
+    The width-parity check is the crisp failure signal for the pypdf
+    approximation drift (`fsz × 0.5 × char_count` ignores real glyph
+    advance widths). The explicit floor `rect_width >= char_count * 2pt`
+    additionally guards the sliver regression from legacy run
+    `3a2e170b`, where a small rect could otherwise slip past the parity
+    check when the truth width itself is small.
+    """
+    violations = []
+
+    with pdfplumber.open(str(FIXTURE)) as pdf:
+        # Fixture pages 1..4 correspond to source pages 1, 2, 5, 21.
         for pno in range(1, 5):
             page = pdf.pages[pno - 1]
             truth = _truth_bboxes(page, TARGET)
@@ -173,15 +208,16 @@ def test_rect_no_overflow_mediabox(pypdf_reader):
             page_x_max = float(mb.right)
             text, frags = _extract_with_positions(str(FIXTURE), pno)
             hits = _find_exact(text, TARGET)
+            char_count = len(TARGET)
+            floor = char_count * 2.0
             for (s, e) in hits:
                 rects = _rect_for_span(frags, s, e, pno, page_x_max)
                 for r in rects:
                     w = r["x1"] - r["x0"]
-                    # Mediabox overshoot (clamped, but guard regression)
-                    if r["x1"] > page_x_max + 0.01:
+                    if w < floor:
                         violations.append(
-                            f"page {pno}: x1={r['x1']:.2f} > "
-                            f"mediabox.right={page_x_max:.2f}"
+                            f"page {pno}: rect width {w:.2f} below sliver floor "
+                            f"{floor:.2f}pt (char_count × 2pt) at y0={r['y0']:.1f}"
                         )
                     best = _pair_by_y(r, truth)
                     if best is None:
@@ -194,7 +230,7 @@ def test_rect_no_overflow_mediabox(pypdf_reader):
                         )
 
     assert not violations, (
-        "rect width / mediabox violations:\n" + "\n".join(violations)
+        "rect width violations:\n" + "\n".join(violations)
     )
 
 
