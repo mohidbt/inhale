@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { X, Star, ExternalLink } from "lucide-react";
 import type { documentReferences } from "@/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
 import { toast } from "sonner";
@@ -176,32 +178,14 @@ export function CitationCard({
           </p>
         )}
         {isPopover && onDismiss && (
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Close"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <Button variant="ghost" size="icon" onClick={onDismiss} aria-label="Close" className="shrink-0">
+            <X data-icon="inline-start" />
+          </Button>
         )}
       </div>
 
       {/* Body */}
-      <div className={`space-y-1.5 ${padding}`}>
+      <div className={`flex flex-col gap-1.5 ${padding}`}>
         {/* Authors */}
         {authors.length > 0 && (
           <p className="text-xs text-muted-foreground line-clamp-2">
@@ -236,8 +220,9 @@ export function CitationCard({
               <span aria-hidden>·</span>
             )}
             {citation.citationCount != null && (
-              <span>
-                ⭐ {citation.citationCount}
+              <span className="inline-flex items-center gap-0.5">
+                <Star className="size-3" aria-hidden />
+                {citation.citationCount}
                 {(citation.influentialCitationCount ?? 0) > 0 && (
                   <span className="ml-1 text-muted-foreground/70">
                     ({citation.influentialCitationCount} influential)
@@ -246,12 +231,7 @@ export function CitationCard({
               </span>
             )}
             {showOaBadge && (
-              <span
-                title="Open Access PDF available"
-                className="ml-1 inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-              >
-                OA
-              </span>
+              <Badge variant="secondary" title="Open Access PDF available">OA</Badge>
             )}
           </div>
         )}
@@ -260,7 +240,7 @@ export function CitationCard({
         {citation.tldrText && (
           <p
             title={citation.tldrText}
-            className="text-xs italic text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap"
+            className="text-xs italic text-muted-foreground truncate"
           >
             {citation.tldrText}
           </p>
@@ -288,15 +268,14 @@ export function CitationCard({
         {pills.length > 0 && (
           <div className="flex flex-wrap gap-1 pt-0.5">
             {pills.map(({ key, label, href }) => (
-              <a
+              <Badge
                 key={key}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium border border-border bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                variant="outline"
+                className="text-[10px]"
+                render={<a href={href} target="_blank" rel="noopener noreferrer" />}
               >
                 {label}
-              </a>
+              </Badge>
             ))}
           </div>
         )}
@@ -342,15 +321,22 @@ export function CitationCard({
         </Button>
         {/* Open PDF */}
         {citation.openAccessPdfUrl && (
-          <a
-            href={citation.openAccessPdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex flex-1 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-border bg-background px-2.5 text-xs font-medium hover:bg-muted h-7"
-            aria-label="Open PDF"
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 text-xs"
+            render={
+              <a
+                href={citation.openAccessPdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open PDF"
+              />
+            }
           >
+            <ExternalLink data-icon="inline-start" />
             Open PDF
-          </a>
+          </Button>
         )}
       </div>
     </div>

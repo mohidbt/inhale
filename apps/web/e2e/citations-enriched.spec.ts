@@ -345,9 +345,6 @@ test.describe("Save to Library + Remove flow", () => {
       timeout: 8_000,
     });
 
-    // Click the Remove button — handle confirm dialog
-    page.on("dialog", (dialog) => dialog.accept());
-
     // Track DELETE request. We capture a Promise so we can await it before
     // the test ends, preventing a "page closed while route in flight" race.
     let resolveDeleteDone!: (status: number) => void;
@@ -371,7 +368,12 @@ test.describe("Save to Library + Remove flow", () => {
       }
     );
 
-    await page.getByRole("button", { name: /remove/i }).first().click();
+    // Click Remove trigger to open AlertDialog, then confirm inside the dialog.
+    await page.getByRole("button", { name: /^remove$/i }).first().click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: /^remove$/i })
+      .click();
 
     // Wait for the card to disappear (UI settled)
     await expect(
