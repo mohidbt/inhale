@@ -3,6 +3,12 @@
 import { useState, type ReactNode } from "react";
 import { Trash2, Eye, EyeOff, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import type { AIHighlightRun } from "@/hooks/use-ai-highlight-runs";
 
 interface Highlight {
@@ -160,9 +166,12 @@ export function HighlightsSidebar({
         {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
         {error && <p className="text-xs text-destructive">{error}</p>}
         {!loading && !error && highlights.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            No highlights yet. Select text to create one.
-          </p>
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>No highlights yet</EmptyTitle>
+              <EmptyDescription>Select text to create one.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
         {!loading && !error && highlights.length > 0 && (
           <div className="space-y-3">

@@ -130,7 +130,7 @@ export function CitationCard({
             href={`https://doi.org/${citation.doi}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="block truncate text-xs text-blue-600 hover:underline dark:text-blue-400"
+            className="block truncate text-xs text-foreground underline underline-offset-4 hover:text-primary"
           >
             doi:{citation.doi}
           </a>
@@ -140,7 +140,7 @@ export function CitationCard({
             href={citation.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="block truncate text-xs text-blue-600 hover:underline dark:text-blue-400"
+            className="block truncate text-xs text-foreground underline underline-offset-4 hover:text-primary"
           >
             {citation.url}
           </a>

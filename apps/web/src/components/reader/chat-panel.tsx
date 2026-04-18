@@ -8,6 +8,7 @@ import { parseHighlightCommand, useAutoHighlight } from "@/hooks/use-auto-highli
 import { ChatMessage } from "./chat-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 
 export interface ChatSeed {
@@ -372,7 +373,7 @@ export function ChatPanel({
             ))}
           </div>
         )}
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <p className="text-xs text-destructive">{error}</p>}
         {attachedSelection && (
           <div className="flex items-start gap-2 rounded-md border border-border bg-background px-2 py-1.5">
             <div className="min-w-0 flex-1">
@@ -453,17 +454,12 @@ export function ChatPanel({
         </div>
       </div>
       {statusBanner && (
-        <div
-          className={cn(
-            "mx-3 mt-2 rounded-md border px-2 py-1.5 text-xs",
-            statusBanner.tone === "error"
-              ? "border-red-200 bg-red-50 text-red-700"
-              : "border-border bg-muted text-foreground"
-          )}
-          role="status"
+        <Alert
+          variant={statusBanner.tone === "error" ? "destructive" : "default"}
+          className="mx-3 mt-2"
         >
-          {statusBanner.text}
-        </div>
+          <AlertDescription>{statusBanner.text}</AlertDescription>
+        </Alert>
       )}
       <form onSubmit={handleSubmit} className="p-3 flex gap-2">
         <Input

@@ -3,6 +3,12 @@
 import { useState, type ReactNode } from "react";
 import { PageThumbnail } from "./page-thumbnail";
 import { useComputedOutline } from "@/hooks/use-computed-outline";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 export interface PdfOutlineItem {
   title: string;
@@ -102,12 +108,12 @@ export function OutlineSidebar({ totalPages, pdfOutline, pdfDoc, onNavigate, doc
                 Building table of contents…
               </p>
             ) : (
-              <p
-                data-testid="contents-empty"
-                className="px-2 py-6 text-center text-xs text-muted-foreground"
-              >
-                This PDF has no table of contents.
-              </p>
+              <Empty data-testid="contents-empty">
+                <EmptyHeader>
+                  <EmptyTitle>No table of contents</EmptyTitle>
+                  <EmptyDescription>This PDF has no outline.</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             )}
           </>
         )}

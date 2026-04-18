@@ -2,6 +2,15 @@
 
 import { useState, useCallback, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import type { CitationWithStatus } from "@/components/reader/citation-card";
 
 // Strip leading "[n] " or "n. " marker prefix that parseBibLines stores in rawText.
@@ -39,50 +48,47 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
       </div>
       <div className="flex-1 overflow-auto p-4">
         {loading && (
-          <div className="flex items-center gap-2">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-            <p className="text-xs text-muted-foreground">Loading…</p>
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-4/6" />
+            <Skeleton className="h-4 w-3/4" />
           </div>
         )}
         {!loading && citations.length === 0 && (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-muted-foreground/50"
-              aria-hidden="true"
-            >
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-            </svg>
-            <p className="text-sm font-medium text-muted-foreground">No citations detected</p>
-            <p className="text-xs text-muted-foreground/70">
-              This document may use a citation format not yet supported.
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-2"
-              disabled={extracting}
-              onClick={handleExtract}
-            >
-              {extracting ? (
-                <>
-                  <span className="mr-2 h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
-                  Extracting…
-                </>
-              ) : (
-                "Extract Citations"
-              )}
-            </Button>
-          </div>
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+              </EmptyMedia>
+              <EmptyTitle>No citations detected</EmptyTitle>
+              <EmptyDescription>Format may not be supported.</EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={extracting}
+                onClick={handleExtract}
+              >
+                {extracting ? "Extracting…" : "Extract Citations"}
+              </Button>
+            </EmptyContent>
+          </Empty>
         )}
         {!loading && citations.length > 0 && (
           <div className="space-y-2">

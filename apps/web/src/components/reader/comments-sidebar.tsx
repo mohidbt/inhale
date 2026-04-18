@@ -3,6 +3,12 @@
 import { useMemo, type ReactNode } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 interface Highlight {
   id: number;
@@ -71,9 +77,12 @@ export function CommentsSidebar({
         {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
         {error && <p className="text-xs text-destructive">{error}</p>}
         {!loading && !error && commented.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            No comments yet. Select text and click Comment.
-          </p>
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>No comments yet</EmptyTitle>
+              <EmptyDescription>Select text and click Comment.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
         {!loading && !error && commented.length > 0 && (
           <div className="space-y-3">
