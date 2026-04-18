@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -44,7 +45,7 @@ export function DocumentCard({
     try {
       const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
       if (!res.ok) {
-        alert("Failed to delete document.");
+        toast.error("Failed to delete document.");
         return;
       }
       setShowDialog(false);
