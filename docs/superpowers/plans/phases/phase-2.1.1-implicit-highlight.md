@@ -192,4 +192,4 @@ Run via `pnpm --filter web test:e2e highlights-render`. Gate passes only when al
 | 50 Per-glyph positions (RED→GREEN) | Done |
 | 51 Regression fixture + assertions | Done |
 | 52 Legacy rebuild (RED→GREEN) | Done |
-| E2E gate (Playwright) | Done-with-caveats |
+| E2E gate (Playwright) | Done |
