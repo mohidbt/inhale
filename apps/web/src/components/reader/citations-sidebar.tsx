@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef, type ReactNode } from "react"
 import { Button } from "@/components/ui/button";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Sparkles, FileSearch, Loader2 } from "lucide-react";
+import { BookOpen, FileSearch, Loader2 } from "lucide-react";
 import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
 import { toast } from "sonner";
 
@@ -82,8 +82,8 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
         {dockControl}
       </div>
       {enriching && (
-        <Alert className="rounded-none border-x-0 border-t-0">
-          <Sparkles />
+        <Alert className="rounded-none border-x-0 border-t-0 px-4">
+          <BookOpen />
           <AlertTitle>Enriching from Semantic Scholar…</AlertTitle>
         </Alert>
       )}

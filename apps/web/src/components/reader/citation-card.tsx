@@ -159,24 +159,34 @@ export function CitationCard({
     >
       {/* Header: title + close button (popover only) */}
       <div className={`flex items-start justify-between gap-2 border-b ${headerPadding}`}>
-        {titleHref ? (
-          <a
-            href={titleHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            data-testid="citation-title"
-            className={`font-semibold leading-snug text-foreground hover:underline line-clamp-3 ${titleClass}`}
-          >
-            {title}
-          </a>
-        ) : (
-          <p
-            data-testid="citation-title"
-            className={`font-semibold leading-snug text-foreground line-clamp-3 ${titleClass}`}
-          >
-            {title}
-          </p>
-        )}
+        <div className="flex min-w-0 items-start gap-2">
+          {citation.markerIndex > 0 && (
+            <span
+              aria-hidden
+              className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-muted px-1.5 text-[11px] font-medium tabular-nums leading-none text-muted-foreground"
+            >
+              {citation.markerIndex}
+            </span>
+          )}
+          {titleHref ? (
+            <a
+              href={titleHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="citation-title"
+              className={`font-semibold leading-5 text-foreground hover:underline line-clamp-3 ${titleClass}`}
+            >
+              {title}
+            </a>
+          ) : (
+            <p
+              data-testid="citation-title"
+              className={`font-semibold leading-5 text-foreground line-clamp-3 ${titleClass}`}
+            >
+              {title}
+            </p>
+          )}
+        </div>
         {isPopover && onDismiss && (
           <Button variant="ghost" size="icon" onClick={onDismiss} aria-label="Close" className="shrink-0">
             <X data-icon="inline-start" />
