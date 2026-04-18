@@ -1,25 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
-import useSWR from "swr";
+import { useState, useEffect } from "react";
 import { CitationCard } from "@/components/reader/citation-card";
 import type { CitationWithStatus } from "@/components/reader/citation-card";
 import type { InferSelectModel } from "drizzle-orm";
 import type { libraryReferences } from "@/db/schema";
 import { toast } from "sonner";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 
 type LibraryRef = InferSelectModel<typeof libraryReferences>;
 
@@ -55,96 +41,66 @@ function toCardCitation(ref: LibraryRef): CitationWithStatus {
   };
 }
 
-const fetcher = (url: string) =>
-  fetch(url).then((r) => {
-    if (!r.ok) throw new Error(`${r.status}`);
-    return r.json() as Promise<LibraryRef[]>;
-  });
-
 export default function ReferencesPage() {
-  const { data: refs, isLoading, error, mutate } = useSWR<LibraryRef[]>(
-    "/api/library/references",
-    fetcher
-  );
+  const [refs, setRefs] = useState<LibraryRef[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (error) toast.error("Failed to load references");
-  }, [error]);
+    fetch("/api/library/references")
+      .then((r) => r.json())
+      .then((data: LibraryRef[]) => setRefs(data))
+      .catch(() => toast.error("Failed to load references"))
+      .finally(() => setLoading(false));
+  }, []);
 
   async function handleRemove(id: number) {
-    const prev = refs ?? [];
-    mutate(
-      prev.filter((x) => x.id !== id),
-      { revalidate: false }
-    );
+    if (!window.confirm("Remove this reference from your library?")) return;
+
+    const prev = refs;
+    setRefs((r) => r.filter((x) => x.id !== id));
+
     try {
       const res = await fetch(`/api/library/references/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`${res.status}`);
-      mutate();
     } catch {
-      mutate(prev, { revalidate: false });
+      setRefs(prev);
       toast.error("Failed to remove reference");
     }
   }
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-2xl font-semibold mb-6">Saved References</h1>
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-        </div>
+        <p className="text-muted-foreground">Loading…</p>
       </div>
     );
   }
-
-  const list = refs ?? [];
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-semibold mb-6">Saved References</h1>
 
-      {list.length === 0 ? (
-        <div className="flex flex-col gap-1 text-muted-foreground">
+      {refs.length === 0 ? (
+        <div className="mt-12 text-center text-muted-foreground">
           <p className="text-lg">No saved references yet.</p>
-          <p className="text-sm">
+          <p className="text-sm mt-1">
             Click a citation in a paper and use &ldquo;Save to Library&rdquo;.
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {list.map((ref) => (
+        <div className="space-y-3">
+          {refs.map((ref) => (
             <div key={ref.id} className="relative group">
               <CitationCard citation={toCardCitation(ref)} variant="compact" />
-              <AlertDialog>
-                <AlertDialogTrigger
-                  render={
-                    <Button variant="ghost" size="sm">
-                      Remove
-                    </Button>
-                  }
-                />
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Remove reference?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Remove this reference from your library?
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      variant="destructive"
-                      onClick={() => handleRemove(ref.id)}
-                    >
-                      Remove
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <button
+                type="button"
+                onClick={() => handleRemove(ref.id)}
+                className="mt-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                aria-label="Remove from library"
+              >
+                Remove
+              </button>
             </div>
           ))}
         </div>
