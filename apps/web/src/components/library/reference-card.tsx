@@ -11,13 +11,25 @@ import {
 export interface ReferenceCardProps {
   id: number;
   title: string;
-  authors: string | null;
+  authors: string | Array<{ name?: string | null }> | null | unknown;
   year: string | null;
   venue: string | null;
   citationCount: number | null;
   abstract: string | null;
   doi: string | null;
   url: string | null;
+}
+
+function formatAuthors(raw: ReferenceCardProps["authors"]): string | null {
+  if (!raw) return null;
+  if (typeof raw === "string") return raw || null;
+  if (Array.isArray(raw)) {
+    const names = raw
+      .map((a) => (a && typeof a === "object" && "name" in a ? (a as { name?: string }).name : null))
+      .filter((n): n is string => typeof n === "string" && n.length > 0);
+    return names.length ? names.join(", ") : null;
+  }
+  return null;
 }
 
 export function ReferenceCard(props: ReferenceCardProps) {
@@ -29,6 +41,7 @@ export function ReferenceCard(props: ReferenceCardProps) {
     props.abstract && props.abstract.length > 300
       ? props.abstract.slice(0, 300) + "…"
       : props.abstract;
+  const authorsText = formatAuthors(props.authors);
 
   function handleRemove() {
     startRemove(async () => {
@@ -54,8 +67,8 @@ export function ReferenceCard(props: ReferenceCardProps) {
         </Button>
       </div>
 
-      {props.authors && (
-        <p className="text-sm text-muted-foreground line-clamp-1">{props.authors}</p>
+      {authorsText && (
+        <p className="text-sm text-muted-foreground line-clamp-1">{authorsText}</p>
       )}
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
