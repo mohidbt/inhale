@@ -189,7 +189,7 @@ Run via `pnpm --filter web test:e2e highlights-render`. Gate passes only when al
 
 | Task | Status |
 |---|---|
-| 50 Per-glyph positions (RED→GREEN) | Pending |
-| 51 Regression fixture + assertions | Pending |
-| 52 Legacy rebuild (RED→GREEN) | Pending |
-| E2E gate (Playwright) | Pending |
+| 50 Per-glyph positions (RED→GREEN) | Done |
+| 51 Regression fixture + assertions | Done |
+| 52 Legacy rebuild (RED→GREEN) | Done |
+| E2E gate (Playwright) | Done-with-caveats |
