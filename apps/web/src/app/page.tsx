@@ -17,7 +17,7 @@ export default function Home() {
           </div>
         </div>
 
-        <span className="text-2xl font-bold tracking-tight italic hidden sm:block">
+        <span className="font-display text-3xl tracking-tight italic hidden sm:block">
           inhale
         </span>
 
@@ -355,7 +355,7 @@ export default function Home() {
         {/* Footer strip */}
         <div className="border-t border-[#1a1a1a]/15 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-6">
-            <span className="text-2xl font-bold tracking-tight italic">
+            <span className="font-display text-3xl tracking-tight italic">
               inhale
             </span>
             <span className="text-[10px] tracking-widest uppercase text-[#1a1a1a]/40">

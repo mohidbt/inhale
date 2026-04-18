@@ -13,7 +13,7 @@ export default function MainLayout({
           <div className="flex items-center gap-6">
             <Link
               href="/library"
-              className="font-semibold text-lg tracking-tight"
+              className="font-display italic text-2xl tracking-tight"
             >
               inhale
             </Link>
