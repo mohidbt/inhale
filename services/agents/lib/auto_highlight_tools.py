@@ -277,6 +277,26 @@ def build_tools(
 # ----- helpers ---------------------------------------------------------------
 
 
+# Sliver threshold matching the legacy run `3a2e170b` symptom: pre-mitigation
+# rects collapsed to ~6×1pt boxes when the pypdf fragment matcher fell through
+# to the `fsz × 0.5` approximation. Task 52 uses this predicate to decide when
+# to offer the user a "Rebuild" action. Keep the TypeScript copy in
+# `highlights-sidebar.tsx` literally equivalent.
+STALE_RECT_MIN_WIDTH = 5.0
+STALE_RECT_MIN_HEIGHT = 2.0
+
+
+def is_stale_rect(rect: dict) -> bool:
+    """True if `rect` looks like a legacy sliver (width<5 AND height<2).
+
+    Both conditions must hold — a rect with normal width but tiny height
+    (or vice-versa) is not stale; only the degenerate sliver shape is.
+    """
+    width = float(rect["x1"]) - float(rect["x0"])
+    height = float(rect["y1"]) - float(rect["y0"])
+    return width < STALE_RECT_MIN_WIDTH and height < STALE_RECT_MIN_HEIGHT
+
+
 def _extract_with_positions(pdf_path: str, page_number: int):
     """Return (full_text, fragments).
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Trash2, Eye, EyeOff, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
+import { Trash2, Eye, EyeOff, ChevronDown, ChevronRight, Sparkles, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -42,6 +42,8 @@ interface HighlightsSidebarProps {
   hiddenRunIds?: Set<string>;
   onToggleRun?: (runId: string) => void;
   onDeleteRun?: (runId: string) => void;
+  onRebuildRun?: (runId: string) => void;
+  rebuildingRunId?: string | null;
 }
 
 function formatDate(iso: string): string {
@@ -60,11 +62,15 @@ function RunsSection({
   hiddenRunIds,
   onToggleRun,
   onDeleteRun,
+  onRebuildRun,
+  rebuildingRunId,
 }: {
   runs: AIHighlightRun[];
   hiddenRunIds: Set<string>;
   onToggleRun: (id: string) => void;
   onDeleteRun: (id: string) => void;
+  onRebuildRun?: (id: string) => void;
+  rebuildingRunId?: string | null;
 }) {
   const [expanded, setExpanded] = useState(true);
   if (runs.length === 0) return null;
@@ -101,6 +107,22 @@ function RunsSection({
                     {formatDate(run.createdAt)}
                   </p>
                 </div>
+                {run.hasStaleRects && onRebuildRun && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    aria-label="Rebuild run"
+                    title="Legacy positions — rebuild"
+                    data-testid={`ai-run-rebuild-${run.id}`}
+                    disabled={rebuildingRunId === run.id}
+                    onClick={() => onRebuildRun(run.id)}
+                  >
+                    <RefreshCw
+                      className={`size-3.5 ${rebuildingRunId === run.id ? "animate-spin" : ""}`}
+                    />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -145,6 +167,8 @@ export function HighlightsSidebar({
   hiddenRunIds,
   onToggleRun,
   onDeleteRun,
+  onRebuildRun,
+  rebuildingRunId,
 }: HighlightsSidebarProps) {
   if (!open) return null;
 
@@ -161,6 +185,8 @@ export function HighlightsSidebar({
             hiddenRunIds={hiddenRunIds}
             onToggleRun={onToggleRun}
             onDeleteRun={onDeleteRun}
+            onRebuildRun={onRebuildRun}
+            rebuildingRunId={rebuildingRunId}
           />
         )}
         {loading && <p className="text-xs text-muted-foreground">Loading...</p>}

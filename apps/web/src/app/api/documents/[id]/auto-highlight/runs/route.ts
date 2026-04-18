@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { aiHighlightRuns, documents, userHighlights } from "@/db/schema";
 import { and, eq, desc, count } from "drizzle-orm";
+import { isStaleRect } from "@/lib/highlight-rects";
 
 export async function GET(
   request: NextRequest,
@@ -51,7 +52,34 @@ export async function GET(
       )
       .orderBy(desc(aiHighlightRuns.createdAt));
 
-    return NextResponse.json({ runs: rows });
+    // Compute `hasStaleRects` per run by scanning stored rects JSONB. Cheap
+    // enough server-side (one extra query scoped to this user's runs); avoids
+    // shipping every rect blob to the client.
+    const runIds = rows.map((r) => r.id);
+    const staleByRun = new Map<string, boolean>();
+    if (runIds.length > 0) {
+      const rectRows = await db
+        .select({
+          layerId: userHighlights.layerId,
+          rects: userHighlights.rects,
+        })
+        .from(userHighlights)
+        .where(eq(userHighlights.userId, session.user.id));
+      for (const h of rectRows) {
+        if (!h.layerId) continue;
+        if (staleByRun.get(h.layerId)) continue;
+        const rects = Array.isArray(h.rects) ? (h.rects as unknown[]) : [];
+        if (rects.some((r) => isStaleRect(r as Record<string, unknown>))) {
+          staleByRun.set(h.layerId, true);
+        }
+      }
+    }
+    const enriched = rows.map((r) => ({
+      ...r,
+      hasStaleRects: staleByRun.get(r.id) === true,
+    }));
+
+    return NextResponse.json({ runs: enriched });
   } catch (err) {
     console.error("GET /auto-highlight/runs failed:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -10,6 +10,7 @@ export interface AIHighlightRun {
   createdAt: string;
   completedAt: string | null;
   highlightCount: number;
+  hasStaleRects?: boolean;
 }
 
 interface Result {
@@ -20,6 +21,8 @@ interface Result {
   toggleRun: (runId: string) => void;
   ensureVisible: (runId: string) => void;
   deleteRun: (runId: string, onChanged?: () => void) => Promise<void>;
+  rebuildRun: (runId: string, onChanged?: () => void) => Promise<void>;
+  rebuildingRunId: string | null;
   refetch: () => Promise<void>;
 }
 
@@ -33,6 +36,7 @@ export function useAIHighlightRuns(documentId: number, refreshKey: number = 0): 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hiddenRunIds, setHiddenRunIds] = useState<Set<string>>(new Set());
+  const [rebuildingRunId, setRebuildingRunId] = useState<string | null>(null);
 
   const fetchRuns = useCallback(
     async (signal?: AbortSignal) => {
@@ -102,7 +106,38 @@ export function useAIHighlightRuns(documentId: number, refreshKey: number = 0): 
     [documentId]
   );
 
+  const rebuildRun = useCallback(
+    async (runId: string, onChanged?: () => void) => {
+      setRebuildingRunId(runId);
+      try {
+        const res = await fetch(
+          `/api/documents/${documentId}/auto-highlight/runs/${runId}/rebuild`,
+          { method: "POST" }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await fetchRuns();
+        onChanged?.();
+      } catch {
+        setError("Failed to rebuild run");
+      } finally {
+        setRebuildingRunId(null);
+      }
+    },
+    [documentId, fetchRuns]
+  );
+
   const refetch = useCallback(() => fetchRuns(), [fetchRuns]);
 
-  return { runs, loading, error, hiddenRunIds, toggleRun, ensureVisible, deleteRun, refetch };
+  return {
+    runs,
+    loading,
+    error,
+    hiddenRunIds,
+    toggleRun,
+    ensureVisible,
+    deleteRun,
+    rebuildRun,
+    rebuildingRunId,
+    refetch,
+  };
 }

@@ -30,6 +30,7 @@ from lib.auto_highlight_tools import (
     _extract_with_positions,
     _find_exact,
     _rect_for_span,
+    is_stale_rect,
 )
 
 
@@ -321,3 +322,26 @@ def test_multiline_span_yields_per_line_rects(pypdf_reader):
     assert a["y0"] > b["y1"] or b["y0"] > a["y1"], (
         f"rects overlap in y: {rects}"
     )
+
+
+# ---------- Task 52: is_stale_rect predicate -------------------------------
+
+
+def test_is_stale_rect_sliver():
+    """Sliver rect (width 4, height 1) matches the legacy 3a2e170b symptom."""
+    assert is_stale_rect({"x0": 10, "y0": 10, "x1": 14, "y1": 11}) is True
+
+
+def test_is_stale_rect_normal_width():
+    """Width >= 5 rescues a rect even if height is tiny."""
+    assert is_stale_rect({"x0": 10, "y0": 10, "x1": 16, "y1": 11}) is False
+
+
+def test_is_stale_rect_normal_height():
+    """Height >= 2 rescues a rect even if width is tiny."""
+    assert is_stale_rect({"x0": 10, "y0": 10, "x1": 14, "y1": 13}) is False
+
+
+def test_is_stale_rect_both_large():
+    """Typical realistic rect is clearly not stale."""
+    assert is_stale_rect({"x0": 100, "y0": 400, "x1": 160, "y1": 412}) is False

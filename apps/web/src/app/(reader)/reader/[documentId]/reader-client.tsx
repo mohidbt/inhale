@@ -201,6 +201,8 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
     toggleRun,
     ensureVisible: ensureRunVisible,
     deleteRun,
+    rebuildRun,
+    rebuildingRunId,
   } = useAIHighlightRuns(documentId, refreshKey);
 
   const handleReviewRun = useCallback(
@@ -575,6 +577,10 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   onDeleteRun={(runId) =>
                     void deleteRun(runId, () => setRefreshKey((k) => k + 1))
                   }
+                  onRebuildRun={(runId) =>
+                    void rebuildRun(runId, () => setRefreshKey((k) => k + 1))
+                  }
+                  rebuildingRunId={rebuildingRunId}
                 />
               ),
             });
