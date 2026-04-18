@@ -171,6 +171,8 @@ No destructive SQL migration — old runs stay, user opts in to rebuild.
 
 **Touches:** `services/agents/lib/auto_highlight_tools.py` (predicate), new admin router, `apps/web/src/components/reader/highlights-sidebar.tsx`.
 
+> **Shipped divergence:** endpoint shape is `POST /api/documents/:id/auto-highlight/runs/:runId/rebuild` (Next.js proxy) → `POST /agents/auto-highlight/runs/{run_id}/rebuild` (FastAPI), scoped under the document for auth hygiene. TS predicate mirror lives in `apps/web/src/lib/highlight-rects.ts`.
+
 ### E2E Gate — Phase 2.1.2 (Playwright)
 
 Extend `apps/web/tests/highlights-render.spec.ts` — Playwright already covers this surface, piggyback on its fixtures:
