@@ -46,7 +46,10 @@ async def run_chat(*, api_key: str, history: list[dict], question: str,
     model = ChatOpenAI(model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key, streaming=True)
     system = _build_system_prompt(supporting_chunks, page_text, anchor_text, selection_text, scope, focus_page)
     if tool_hints:
-        system = system + "\n\n" + "\n\n".join(tool_hints)
+        # Prepend: RAG prompt + supporting chunks can be long; burying the
+        # toolbelt hint at the bottom causes the LLM to default to inline
+        # answers even when the user explicitly asks to highlight.
+        system = "\n\n".join(tool_hints) + "\n\n" + system
 
     messages: list[Any] = [{"role": "system", "content": system}]
     messages.extend(history[-10:])
