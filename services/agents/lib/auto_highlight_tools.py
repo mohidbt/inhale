@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from difflib import SequenceMatcher
 
 import anyio
+import pdfplumber
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field, ValidationError
 from pypdf import PdfReader
@@ -277,17 +278,33 @@ def build_tools(
 
 
 def _extract_with_positions(pdf_path: str, page_number: int):
-    """Return (full_text, fragments). Each fragment: (text, char_start, x, y, font_size).
+    """Return (full_text, fragments).
 
-    Limitation: pypdf's visitor_text fires per text-show operator, typically
-    a full line. So rects are line-level, not character-level.
+    Text and offsets come from pypdf's `visitor_text` so the stream shape
+    (including inline concatenations from adjacent text-show ops) is
+    preserved. Per-glyph bboxes come from pdfplumber's `page.chars`: for
+    each fragment we look up a contiguous run of plumber chars whose text
+    matches the fragment and whose origin is near pypdf's (tm_x, tm_y).
+
+    Each fragment is `(cursor, origin, eff_size, glyphs)`:
+      - `cursor` — absolute char offset in `full_text`
+      - `origin` — pypdf `(tm_x, tm_y)` for the fragment, used as a
+        fallback anchor when no plumber glyph matches
+      - `eff_size` — effective font size in pts
+      - `glyphs` — a list aligned to the fragment text; each entry is either
+        the pdfplumber char dict for that character or `None` when no
+        plumber match exists (e.g. synthesised `\n` from pypdf, or XObject
+        duplicates that pdfplumber does not render)
     """
     reader = PdfReader(pdf_path)
     if page_number < 1 or page_number > len(reader.pages):
         return None, []
     page = reader.pages[page_number - 1]
 
-    fragments: list[tuple[str, int, float, float, float]] = []
+    with pdfplumber.open(pdf_path) as pdf:
+        plumber_chars = pdf.pages[page_number - 1].chars
+
+    fragments: list[tuple[int, tuple[float, float], float, list]] = []
     parts: list[str] = []
     cursor = 0
 
@@ -295,21 +312,80 @@ def _extract_with_positions(pdf_path: str, page_number: int):
         nonlocal cursor
         if not text:
             return
-        # Effective glyph size = stated font_size × |tm[0]| × |cm[0]|.
-        # Most PDFs encode size in the text-matrix scale with font_size=1,
-        # so using the reported font_size alone yields 6x1 slivers.
+        origin_x = float(tm[4]) if tm else 0.0
+        origin_y = float(tm[5]) if tm else 0.0
         stated = float(font_size or 1.0)
         tm_scale = abs(float(tm[0])) if tm else 1.0
         cm_scale = abs(float(cm[0])) if cm else 1.0
         eff_size = stated * tm_scale * cm_scale
         if eff_size < 2.0:
             eff_size = 10.0
-        fragments.append((text, cursor, float(tm[4]), float(tm[5]), eff_size))
+        glyphs = _match_fragment_glyphs(text, origin_x, origin_y, plumber_chars)
+        fragments.append((cursor, (origin_x, origin_y), eff_size, glyphs))
         parts.append(text)
         cursor += len(text)
 
     page.extract_text(visitor_text=visitor)
     return "".join(parts), fragments
+
+
+def _match_fragment_glyphs(
+    text: str, origin_x: float, origin_y: float, plumber_chars: list
+) -> list:
+    """Locate the pdfplumber chars for a pypdf text fragment.
+
+    Find a contiguous run in `plumber_chars` whose text matches `text`
+    glyph-for-glyph (skipping python-only characters like `\\n`). Prefer
+    a run whose y0 is within ~6pt of the pypdf baseline `origin_y`; if
+    that fails, accept any exact text match. Returns a list aligned to
+    `text`: entry `i` is the plumber char for `text[i]`, or `None` when
+    there is no match (fragment is pypdf-only, or the glyph is
+    synthesised whitespace).
+    """
+    n = len(plumber_chars)
+    tlen = len(text)
+    # Strip python-only chars from candidate needle, remember their positions.
+    needle_indices: list[int] = []
+    needle: list[str] = []
+    for i, ch in enumerate(text):
+        if ch in ("\n", "\r"):
+            continue
+        needle_indices.append(i)
+        needle.append(ch)
+    if not needle:
+        return [None] * tlen
+    nl = len(needle)
+
+    def _pack(start: int) -> list:
+        out: list = [None] * tlen
+        for k, ni in enumerate(needle_indices):
+            out[ni] = plumber_chars[start + k]
+        return out
+
+    near_hits: list[int] = []
+    any_hits: list[int] = []
+    for start in range(n - nl + 1):
+        ok = True
+        for k in range(nl):
+            if plumber_chars[start + k].get("text") != needle[k]:
+                ok = False
+                break
+        if not ok:
+            continue
+        any_hits.append(start)
+        if abs(plumber_chars[start]["y0"] - origin_y) < 6.0:
+            near_hits.append(start)
+
+    if near_hits:
+        # If multiple y-aligned runs exist, prefer the one whose x0 is
+        # closest to the pypdf origin.
+        best = min(
+            near_hits, key=lambda s: abs(plumber_chars[s]["x0"] - origin_x)
+        )
+        return _pack(best)
+    if any_hits:
+        return _pack(any_hits[0])
+    return [None] * tlen
 
 
 def _find_exact(text: str, phrase: str) -> list[tuple[int, int]]:
@@ -341,44 +417,65 @@ def _find_fuzzy(
 def _rect_for_span(
     fragments, start: int, end: int, page_number: int, page_x_max: float = 1e9
 ) -> list[dict]:
-    """Return one rect per line the span covers. Width is approximated from
-    font_size × chars (0.5) since pypdf doesn't expose glyph widths.
+    """Return one rect per visual line the span [start, end) covers.
 
-    Fragments with the same y are grouped into a line; each line produces one
-    rect. This avoids the "giant block" bug when a hit straddles fragments on
-    different lines. Rects are clamped to the page mediabox on the right.
+    Each fragment is `(cursor, origin, eff_size, glyphs)`; `glyphs[i]` is
+    the pdfplumber char dict for `text[cursor + i]` or `None`. Matched
+    glyphs contribute their real per-glyph bboxes. A fragment with no
+    plumber matches (e.g. duplicated XObject content that pdfplumber
+    skips) falls back to a synthetic bbox anchored at pypdf's origin
+    with `eff_size × 0.5` per-char advance — only hit by pypdf-only
+    spans; the accuracy-critical tests use phrases that always match
+    plumber. Boxes are grouped into y-bands (±0.5pt jitter) and each
+    band yields one rect, clamped to `page_x_max` on the right.
     """
-    overlapping = [f for f in fragments if f[1] < end and (f[1] + len(f[0])) > start]
-    if not overlapping:
+    if start >= end:
         return []
-    # Group overlapping fragments by y (line).
+    boxes: list[tuple[float, float, float, float]] = []  # (x0, y0, x1, y1)
+    for (cursor, origin, eff_size, glyphs) in fragments:
+        frag_end = cursor + len(glyphs)
+        if frag_end <= start or cursor >= end:
+            continue
+        lo = max(0, start - cursor)
+        hi = min(len(glyphs), end - cursor)
+        slice_glyphs = glyphs[lo:hi]
+        matched = [g for g in slice_glyphs if g is not None]
+        if matched:
+            for g in matched:
+                boxes.append((g["x0"], g["y0"], g["x1"], g["y1"]))
+            continue
+        # Fallback: pypdf-only fragment. Synthesise a rect at its origin.
+        ox, oy = origin
+        char_n = hi - lo
+        if char_n <= 0:
+            continue
+        approx = eff_size * 0.5
+        fx0 = ox + max(0, lo) * approx
+        fx1 = ox + (lo + char_n) * approx
+        boxes.append((fx0, oy, fx1, oy + eff_size))
+    if not boxes:
+        return []
     lines: list[list] = []
-    for f in overlapping:
-        if lines and abs(lines[-1][-1][3] - f[3]) < 0.5:
-            lines[-1].append(f)
+    for box in boxes:
+        if lines and abs(lines[-1][-1][1] - box[1]) < 0.5:
+            lines[-1].append(box)
         else:
-            lines.append([f])
+            lines.append([box])
     rects: list[dict] = []
     for line in lines:
-        first = line[0]
-        last = line[-1]
-        _, first_cur, fx, fy, fsz = first
-        _, last_cur, lx, _, lsz = last
-        line_start = max(start, first_cur)
-        line_end = min(end, last_cur + len(last[0]))
-        x0 = fx + max(0, line_start - first_cur) * fsz * 0.5
-        x1 = lx + max(0, line_end - last_cur) * lsz * 0.5
-        if x1 <= x0:
-            x1 = x0 + fsz * 0.5
+        x0 = min(b[0] for b in line)
+        y0 = min(b[1] for b in line)
+        x1 = max(b[2] for b in line)
+        y1 = max(b[3] for b in line)
         x0 = min(x0, page_x_max)
         x1 = min(x1, page_x_max)
         rects.append(
             {
                 "page": page_number,
                 "x0": x0,
-                "y0": fy,
+                "y0": y0,
                 "x1": x1,
-                "y1": fy + max(fsz, lsz),
+                "y1": y1,
             }
         )
     return rects
