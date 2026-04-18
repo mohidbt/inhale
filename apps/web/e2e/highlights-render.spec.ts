@@ -1,5 +1,7 @@
 import { test, expect, Page } from "@playwright/test";
 import { signUp, uniqueEmail, signUpAndLogin } from "./helpers/auth";
+// Truth bboxes regenerated via `python e2e/fixtures/generate-truth.py` — rerun
+// if the fixture PDF changes or pdfplumber is upgraded.
 import {
   loadTruth,
   toPdfRect,
@@ -180,6 +182,9 @@ test.describe("auto-highlight rendering (Phase 2.1.2 gate)", () => {
     truth = loadTruth();
   });
 
+  // Validates the React overlay renderer end-to-end (seed → fetch → paint).
+  // Python extraction math (pdfplumber glyph rects) is covered by
+  // `services/agents/tests/test_auto_highlight_rects.py`.
   test("glyph accuracy, no blank-line rects, no overflow", async ({ page }) => {
     const email = uniqueEmail();
     const password = "Password123!";
@@ -340,8 +345,9 @@ test.describe("auto-highlight rendering (Phase 2.1.2 gate)", () => {
     await expect(rebuildBtn).toBeVisible({ timeout: 10_000 });
 
     // Clicking the button should POST to the rebuild endpoint. Intercept the
-    // request to confirm the wiring; don't gate on the upstream Python
-    // service's success (that's covered by Python-side pytest gating).
+    // request to confirm the UI → API wiring only. Full rebuild-loop gating
+    // (sliver rect in → clean rect out of the Python handler) lives in
+    // `services/agents/tests/test_auto_highlight_rebuild.py`.
     const rebuildRequest = page.waitForRequest(
       (req) =>
         req.url().includes(`/auto-highlight/runs/${runId}/rebuild`) &&
