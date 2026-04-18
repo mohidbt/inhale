@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { documentReferences } from "@/db/schema";
 import type { InferSelectModel } from "drizzle-orm";
@@ -74,16 +73,27 @@ export function CitationCard({
         <p className="text-xs font-semibold leading-snug text-foreground line-clamp-3">
           {title}
         </p>
-        <Button
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
           onClick={onDismiss}
-          className="size-6 shrink-0"
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Close"
         >
-          <X data-icon="inline-start" />
-        </Button>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
       </div>
 
       {/* Metadata */}
@@ -120,7 +130,7 @@ export function CitationCard({
             href={`https://doi.org/${citation.doi}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="block truncate text-xs text-foreground underline underline-offset-4 hover:text-primary"
+            className="block truncate text-xs text-blue-600 hover:underline dark:text-blue-400"
           >
             doi:{citation.doi}
           </a>
@@ -130,7 +140,7 @@ export function CitationCard({
             href={citation.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="block truncate text-xs text-foreground underline underline-offset-4 hover:text-primary"
+            className="block truncate text-xs text-blue-600 hover:underline dark:text-blue-400"
           >
             {citation.url}
           </a>

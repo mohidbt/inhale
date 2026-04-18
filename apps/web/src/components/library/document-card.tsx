@@ -3,8 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
-import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -45,7 +43,7 @@ export function DocumentCard({
     try {
       const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
       if (!res.ok) {
-        toast.error("Failed to delete document.");
+        alert("Failed to delete document.");
         return;
       }
       setShowDialog(false);
@@ -74,19 +72,32 @@ export function DocumentCard({
           </p>
         </Link>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
+        <button
           onClick={(e) => {
             e.preventDefault();
             setShowDialog(true);
           }}
-          className="absolute top-2 right-2 size-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
           aria-label={`Delete ${title}`}
         >
-          <Trash2 data-icon="inline-start" />
-        </Button>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+            <path d="M9 6V4h6v2" />
+          </svg>
+        </button>
       </div>
 
       <Dialog open={showDialog} onOpenChange={setShowDialog}>

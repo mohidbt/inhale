@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 
 export function UploadZone() {
   const [uploading, setUploading] = useState(false);
@@ -12,7 +11,7 @@ export function UploadZone() {
 
   async function uploadFile(file: File) {
     if (file.type !== "application/pdf") {
-      toast.error("Only PDF files are supported.");
+      alert("Only PDF files are supported.");
       return;
     }
 
@@ -28,7 +27,7 @@ export function UploadZone() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data.error ?? "Upload failed. Please try again.");
+        alert(data.error ?? "Upload failed. Please try again.");
         return;
       }
 
