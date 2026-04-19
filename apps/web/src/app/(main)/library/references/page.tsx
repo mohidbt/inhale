@@ -6,6 +6,7 @@ import type { CitationWithStatus } from "@/components/reader/citation-card";
 import type { InferSelectModel } from "drizzle-orm";
 import type { libraryReferences } from "@/db/schema";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 type LibraryRef = InferSelectModel<typeof libraryReferences>;
 
@@ -91,17 +92,23 @@ export default function ReferencesPage() {
       ) : (
         <div className="space-y-3">
           {refs.map((ref) => (
-            <div key={ref.id} className="relative group">
-              <CitationCard citation={toCardCitation(ref)} variant="compact" />
-              <button
-                type="button"
-                onClick={() => handleRemove(ref.id)}
-                className="mt-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
-                aria-label="Remove from library"
-              >
-                Remove
-              </button>
-            </div>
+            <CitationCard
+              key={ref.id}
+              citation={toCardCitation(ref)}
+              variant="compact"
+              headerAction={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleRemove(ref.id)}
+                  className="h-7 rounded-full px-2.5 text-xs hover:text-destructive hover:border-destructive"
+                  aria-label="Remove from library"
+                >
+                  Remove
+                </Button>
+              }
+            />
           ))}
         </div>
       )}

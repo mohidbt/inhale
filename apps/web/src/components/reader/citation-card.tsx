@@ -27,6 +27,7 @@ interface CitationCardProps {
   onKeep?: () => void;
   onSaveToLibrary?: () => void;
   variant?: CitationCardVariant;
+  headerAction?: React.ReactNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,7 @@ export function CitationCard({
   onKeep,
   onSaveToLibrary,
   variant = "popover",
+  headerAction,
 }: CitationCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [leftPos, setLeftPos] = useState<number>(rect?.left ?? 0);
@@ -139,7 +141,7 @@ export function CitationCard({
   // ---------------------------------------------------------------------------
 
   const padding = isPopover ? "p-4" : "p-3";
-  const headerPadding = isPopover ? "p-3" : "p-2";
+  const headerPadding = isPopover ? "px-4 py-3" : "px-3 py-2";
   const titleClass = isPopover ? "text-base" : "text-sm";
   const abstractClamp = isPopover ? "line-clamp-3" : "line-clamp-2";
 
@@ -158,8 +160,8 @@ export function CitationCard({
       style={isPopover && rect ? { top: rect.top, left: Math.max(8, leftPos) } : undefined}
     >
       {/* Header: title + close button (popover only) */}
-      <div className={`flex items-start justify-between gap-2 border-b ${headerPadding}`}>
-        <div className="flex min-w-0 items-start gap-2">
+      <div className={`flex items-center justify-between gap-2 border-b ${headerPadding}`}>
+        <div className="flex min-w-0 items-center gap-2">
           {citation.markerIndex > 0 && (
             <span
               aria-hidden
@@ -192,6 +194,7 @@ export function CitationCard({
             <X data-icon="inline-start" />
           </Button>
         )}
+        {headerAction && <div className="shrink-0">{headerAction}</div>}
       </div>
 
       {/* Body */}

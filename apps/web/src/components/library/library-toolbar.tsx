@@ -2,10 +2,16 @@
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type SortKey = "recent" | "uploaded" | "title";
 
@@ -29,7 +35,7 @@ export function LibraryToolbar({ sort, q }: { sort: SortKey; q: string }) {
     startTransition(() => router.replace(qs ? `${pathname}?${qs}` : pathname));
   }
 
-  function onSort(value: SortKey) {
+  function onSort(value: string) {
     const next = new URLSearchParams(params);
     if (value === "recent") next.delete("sort"); else next.set("sort", value);
     push(next);
@@ -55,20 +61,26 @@ export function LibraryToolbar({ sort, q }: { sort: SortKey; q: string }) {
         className="max-w-sm h-9 bg-transparent border-0 border-b border-transparent focus-visible:ring-0 focus-visible:border-foreground/30 rounded-none px-0"
         data-testid="library-search"
       />
-      <Select value={sort} onValueChange={(v) => onSort(v as SortKey)}>
-        <SelectTrigger
-          className="w-auto h-9 gap-2 border-0 bg-transparent text-sm text-muted-foreground hover:text-foreground focus:ring-0 px-2"
-          data-testid="library-sort"
-        >
-          <span className="text-[11px] uppercase tracking-widest opacity-60">Sort</span>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent align="end">
-          {(Object.keys(LABELS) as SortKey[]).map((k) => (
-            <SelectItem key={k} value={k}>{LABELS[k]}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="outline" size="sm" data-testid="library-sort">
+              <span className="text-muted-foreground">Sort:</span>
+              {LABELS[sort]}
+              <ChevronDown data-icon="inline-end" className="text-muted-foreground" />
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="end" className="min-w-[10rem]">
+          <DropdownMenuRadioGroup value={sort} onValueChange={onSort}>
+            {(Object.keys(LABELS) as SortKey[]).map((k) => (
+              <DropdownMenuRadioItem key={k} value={k}>
+                {LABELS[k]}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
