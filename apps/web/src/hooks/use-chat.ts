@@ -28,7 +28,7 @@ export interface ChatSource {
   relevance: number;
 }
 
-export type ChatScope = "page" | "selection" | "paper";
+export type ChatScope = "page" | "selection" | "paper" | "segment";
 
 export interface ChatSendOptions {
   scope?: ChatScope;

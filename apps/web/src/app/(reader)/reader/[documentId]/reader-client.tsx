@@ -205,7 +205,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
       setChatSeed({
         text: buildExplainSeed(seg),
         pageNumber: seg.page + 1,
-        scope: "page",
+        scope: "segment",
         nonce: Date.now(),
       });
       setChatOpen(true);
