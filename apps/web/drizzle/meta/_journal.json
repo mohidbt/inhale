@@ -40,8 +40,22 @@
     {
       "idx": 5,
       "version": "7",
-      "when": 1776450048046,
-      "tag": "0005_library_last_opened",
+      "when": 1776412132614,
+      "tag": "0005_phase_2_1_ai_highlight_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776591425441,
+      "tag": "0006_overjoyed_phantom_reporter",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776591559078,
+      "tag": "0007_puzzling_secret_warriors",
       "breakpoints": true
     }
   ]

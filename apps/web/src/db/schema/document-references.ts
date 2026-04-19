@@ -1,5 +1,6 @@
-import { pgTable, text, timestamp, serial, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, serial, integer, index, jsonb } from "drizzle-orm/pg-core";
 import { documents } from "./documents";
+import type { Author } from "@/lib/citations/author-utils";
 
 export const documentReferences = pgTable("document_references", {
   id: serial("id").primaryKey(),
@@ -10,7 +11,7 @@ export const documentReferences = pgTable("document_references", {
   markerIndex: integer("marker_index").notNull(),
   rawText: text("raw_text"),
   title: text("title"),
-  authors: text("authors"),
+  authors: jsonb("authors").$type<Author[]>(),
   year: text("year"),
   doi: text("doi"),
   url: text("url"),
@@ -20,6 +21,12 @@ export const documentReferences = pgTable("document_references", {
   citationCount: integer("citation_count"),
   pageNumber: integer("page_number"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Phase 2.2: Semantic Scholar enrichment
+  influentialCitationCount: integer("influential_citation_count"),
+  openAccessPdfUrl: text("open_access_pdf_url"),
+  tldrText: text("tldr_text"),
+  externalIds: jsonb("external_ids").$type<Record<string, string>>(),
+  bibtex: text("bibtex"),
 }, (table) => [
   index("document_references_document_id_idx").on(table.documentId),
 ]);

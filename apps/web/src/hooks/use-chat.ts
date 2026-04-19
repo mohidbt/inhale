@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ViewportContext } from "./use-viewport-tracking";
 
 export interface ChatAttachment {
@@ -7,10 +7,20 @@ export interface ChatAttachment {
   pageNumber: number;
 }
 
+export type ChatMessageKind =
+  | "chat"
+  | "auto-highlight-progress"
+  | "auto-highlight-result";
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   attachment?: ChatAttachment;
+  // Auto-highlight metadata (populated only for kind !== "chat").
+  kind?: ChatMessageKind;
+  runId?: string;
+  highlightsCount?: number;
+  progressSteps?: string[];
 }
 
 export interface ChatSource {
@@ -27,12 +37,23 @@ export interface ChatSendOptions {
   attachment?: ChatAttachment;
 }
 
-export function useChat(documentId: number) {
+export interface UseChatOptions {
+  onHighlightsChanged?: () => void;
+}
+
+export function useChat(documentId: number, options?: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sources, setSources] = useState<ChatSource[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<number | undefined>();
+
+  // Ref avoids re-creating sendMessage (and its stale closures) on every
+  // render when the caller passes an inline callback.
+  const onHighlightsChangedRef = useRef(options?.onHighlightsChanged);
+  useEffect(() => {
+    onHighlightsChangedRef.current = options?.onHighlightsChanged;
+  }, [options?.onHighlightsChanged]);
 
   const sendMessage = useCallback(
     async (
@@ -94,6 +115,10 @@ export function useChat(documentId: number) {
                 sources?: ChatSource[];
                 message?: string;
                 conversationId?: number;
+                step?: string;
+                label?: string;
+                runId?: string;
+                count?: number;
               };
               if (parsed.type === "sources" && parsed.sources) {
                 setSources(parsed.sources);
@@ -103,12 +128,41 @@ export function useChat(documentId: number) {
               } else if (parsed.type === "token" && parsed.content) {
                 setMessages((prev) => {
                   const updated = [...prev];
+                  const last = updated[updated.length - 1];
                   updated[updated.length - 1] = {
-                    role: "assistant",
-                    content: updated[updated.length - 1].content + parsed.content,
+                    ...last,
+                    content: last.content + parsed.content,
                   };
                   return updated;
                 });
+              } else if (parsed.type === "highlight_progress") {
+                const label = parsed.label || parsed.step;
+                if (label) {
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    updated[updated.length - 1] = {
+                      ...last,
+                      kind: "auto-highlight-progress",
+                      progressSteps: [...(last.progressSteps ?? []), label],
+                    };
+                    return updated;
+                  });
+                }
+              } else if (parsed.type === "highlight_done") {
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  updated[updated.length - 1] = {
+                    ...last,
+                    kind: "auto-highlight-result",
+                    runId: parsed.runId,
+                    highlightsCount: parsed.count,
+                    progressSteps: undefined,
+                  };
+                  return updated;
+                });
+                onHighlightsChangedRef.current?.();
               } else if (parsed.type === "error") {
                 setError(parsed.message ?? "Streaming error");
               }
@@ -152,10 +206,12 @@ export function useChat(documentId: number) {
 
   return {
     messages,
+    setMessages,
     sources,
     streaming,
     error,
     conversationId,
+    setConversationId,
     sendMessage,
     clearMessages,
     loadConversation,

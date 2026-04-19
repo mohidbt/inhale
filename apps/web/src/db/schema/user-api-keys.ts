@@ -1,7 +1,7 @@
 import { pgTable, text, timestamp, serial, boolean, jsonb, pgEnum } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 
-export const providerTypeEnum = pgEnum("provider_type", ["llm", "voice", "ocr"]);
+export const providerTypeEnum = pgEnum("provider_type", ["llm", "voice", "ocr", "references"]);
 
 export const storageModeEnum = pgEnum("storage_mode", ["cloud", "browser_only"]);
 

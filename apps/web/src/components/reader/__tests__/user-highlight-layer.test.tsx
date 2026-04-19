@@ -30,4 +30,28 @@ describe("UserHighlightLayer", () => {
     );
     expect(container.querySelectorAll("[data-highlight-id]")).toHaveLength(0);
   });
+
+  it("hides highlights whose layerId is in hiddenLayerIds", () => {
+    const hidden: UserHighlight = {
+      id: 3, color: "yellow", source: "ai-auto", layerId: "run-1",
+      rects: [{ page: 1, x0: 0, y0: 0, x1: 10, y1: 10 }],
+    };
+    const visible: UserHighlight = {
+      id: 4, color: "yellow", source: "user", layerId: null,
+      rects: [{ page: 1, x0: 20, y0: 20, x1: 30, y1: 30 }],
+    };
+    const { container } = render(
+      <UserHighlightLayer
+        highlights={[hidden, visible]}
+        pageNumber={1}
+        naturalWidth={612}
+        naturalHeight={792}
+        displayWidth={612}
+        hiddenLayerIds={new Set(["run-1"])}
+      />
+    );
+    const overlays = container.querySelectorAll("[data-highlight-id]");
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].getAttribute("data-highlight-id")).toBe("4");
+  });
 });

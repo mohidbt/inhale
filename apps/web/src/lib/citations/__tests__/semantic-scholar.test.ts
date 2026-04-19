@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  searchPaperByTitle,
-  lookupPaperByDoi,
-  lookupPaperById,
+  resolvePaperId,
+  fetchPaperBatch,
   enrichReferences,
 } from "../semantic-scholar";
 
@@ -10,27 +9,42 @@ import {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const PAPER_RESPONSE = {
+const FULL_PAPER_RESPONSE = {
   paperId: "abc123",
   title: "Attention Is All You Need",
-  authors: [{ name: "Ashish Vaswani" }, { name: "Noam Shazeer" }],
+  authors: [
+    { name: "Ashish Vaswani", authorId: "auth1" },
+    { name: "Noam Shazeer", authorId: "auth2" },
+  ],
   year: 2017,
   externalIds: { DOI: "10.5555/3295222.3295349", ArXiv: "1706.03762" },
   abstract: "The dominant sequence transduction models...",
   venue: "NeurIPS",
   citationCount: 50000,
+  influentialCitationCount: 8000,
+  openAccessPdf: { url: "https://arxiv.org/pdf/1706.03762.pdf" },
+  isOpenAccess: true,
+  tldr: { text: "A transformer architecture based purely on attention." },
+  citationStyles: { bibtex: "@article{vaswani2017attention,...}" },
 };
 
-const EXPECTED_METADATA = {
-  semanticScholarId: "abc123",
+const EXPECTED_FULL_METADATA = {
+  paperId: "abc123",
   title: "Attention Is All You Need",
-  authors: "Ashish Vaswani, Noam Shazeer",
-  year: "2017",
-  doi: "10.5555/3295222.3295349",
-  url: "https://www.semanticscholar.org/paper/abc123",
+  authors: [
+    { name: "Ashish Vaswani", authorId: "auth1" },
+    { name: "Noam Shazeer", authorId: "auth2" },
+  ],
+  year: 2017,
+  externalIds: { DOI: "10.5555/3295222.3295349", ArXiv: "1706.03762" },
   abstract: "The dominant sequence transduction models...",
   venue: "NeurIPS",
   citationCount: 50000,
+  influentialCitationCount: 8000,
+  openAccessPdfUrl: "https://arxiv.org/pdf/1706.03762.pdf",
+  isOpenAccess: true,
+  tldr: "A transformer architecture based purely on attention.",
+  bibtex: "@article{vaswani2017attention,...}",
 };
 
 function mockFetch(status: number, body: unknown) {
@@ -42,301 +56,278 @@ function mockFetch(status: number, body: unknown) {
 }
 
 // ---------------------------------------------------------------------------
-// searchPaperByTitle
+// Task B: New tests (TDD — written before implementation)
 // ---------------------------------------------------------------------------
 
-describe("searchPaperByTitle", () => {
+// Test 1: Mapper — mapPaper returns correct PaperMetadata shape
+describe("mapPaper (via fetchPaperBatch)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("maps all fields correctly from a full paper response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetch(200, [FULL_PAPER_RESPONSE])
+    );
+    const results = await fetchPaperBatch(["abc123"]);
+    expect(results[0]).toEqual(EXPECTED_FULL_METADATA);
+  });
+});
+
+// Test 2: Batch-call count — enrichReferences with 3 refs → 3 resolve calls + 1 batch POST
+describe("enrichReferences — call counts", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
-
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
-  it("returns PaperMetadata on successful search", async () => {
-    vi.stubGlobal("fetch", mockFetch(200, { data: [PAPER_RESPONSE] }));
-    const result = await searchPaperByTitle("Attention Is All You Need");
-    expect(result).toEqual(EXPECTED_METADATA);
-  });
-
-  it("encodes the title in the query string", async () => {
-    const fetchMock = mockFetch(200, { data: [PAPER_RESPONSE] });
-    vi.stubGlobal("fetch", fetchMock);
-    await searchPaperByTitle("Attention Is All You Need");
-    const url = fetchMock.mock.calls[0][0] as string;
-    expect(url).toContain("query=Attention+Is+All+You+Need");
-  });
-
-  it("returns null when data array is empty", async () => {
-    vi.stubGlobal("fetch", mockFetch(200, { data: [] }));
-    const result = await searchPaperByTitle("Unknown Paper");
-    expect(result).toBeNull();
-  });
-
-  it("returns null on 404", async () => {
-    vi.stubGlobal("fetch", mockFetch(404, {}));
-    const result = await searchPaperByTitle("Missing Paper");
-    expect(result).toBeNull();
-  });
-
-  it("handles null/empty title gracefully", async () => {
-    const result = await searchPaperByTitle("");
-    expect(result).toBeNull();
-  });
-
-  it("retries once on 429 and succeeds", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
-      .mockResolvedValueOnce({
+  it("calls resolve 3 times and batch once for 3 refs", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        // batch call
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [FULL_PAPER_RESPONSE, FULL_PAPER_RESPONSE, FULL_PAPER_RESPONSE],
+        });
+      }
+      // resolve call (DOI or search/match)
+      return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => ({ data: [PAPER_RESPONSE] }),
+        json: async () => ({ paperId: "abc123" }),
       });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
-    const promise = searchPaperByTitle("Attention Is All You Need");
-    // Advance past the retry delay (5000ms)
+    const refs = [
+      { id: 1, title: "Paper A", doi: "10.1/a" },
+      { id: 2, title: "Paper B", doi: "10.1/b" },
+      { id: 3, title: "Paper C", doi: "10.1/c" },
+    ];
+    const promise = enrichReferences(refs);
     await vi.runAllTimersAsync();
-    const result = await promise;
+    await promise;
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result).toEqual(EXPECTED_METADATA);
+    const calls = fetchMock.mock.calls as [string, RequestInit?][];
+    const resolveCalls = calls.filter(([, init]) => !init || init.method !== "POST");
+    const batchCalls = calls.filter(([, init]) => init?.method === "POST");
+
+    expect(resolveCalls).toHaveLength(3);
+    expect(batchCalls).toHaveLength(1);
+  });
+});
+
+// Test 3: Chunking — fetchPaperBatch with 501 ids → 2 POST calls
+describe("fetchPaperBatch — chunking", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it("returns null when 429 persists after retry", async () => {
+  it("makes 2 POST calls for 501 ids", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 429,
-      json: async () => ({}),
+      ok: true,
+      status: 200,
+      json: async () => [],
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const promise = searchPaperByTitle("Some Paper");
-    await vi.runAllTimersAsync();
-    const result = await promise;
+    const ids = Array.from({ length: 501 }, (_, i) => `id${i}`);
+    await fetchPaperBatch(ids);
 
-    expect(result).toBeNull();
-  });
-
-  it("maps authors array to comma-separated string", async () => {
-    const paper = {
-      ...PAPER_RESPONSE,
-      authors: [{ name: "A" }, { name: "B" }, { name: "C" }],
-    };
-    vi.stubGlobal("fetch", mockFetch(200, { data: [paper] }));
-    const result = await searchPaperByTitle("Multi-author paper");
-    expect(result?.authors).toBe("A, B, C");
-  });
-
-  it("handles missing optional fields (null year, no DOI)", async () => {
-    const paper = {
-      paperId: "xyz789",
-      title: "Minimal Paper",
-      authors: [],
-      year: null,
-      externalIds: {},
-      abstract: null,
-      venue: null,
-      citationCount: null,
-    };
-    vi.stubGlobal("fetch", mockFetch(200, { data: [paper] }));
-    const result = await searchPaperByTitle("Minimal Paper");
-    expect(result).toEqual({
-      semanticScholarId: "xyz789",
-      title: "Minimal Paper",
-      authors: "",
-      year: null,
-      doi: null,
-      url: "https://www.semanticscholar.org/paper/xyz789",
-      abstract: null,
-      venue: null,
-      citationCount: null,
-    });
+    const postCalls = (fetchMock.mock.calls as [string, RequestInit?][]).filter(
+      ([, init]) => init?.method === "POST"
+    );
+    expect(postCalls).toHaveLength(2);
   });
 });
 
-// ---------------------------------------------------------------------------
-// lookupPaperByDoi
-// ---------------------------------------------------------------------------
-
-describe("lookupPaperByDoi", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("returns PaperMetadata on success", async () => {
-    vi.stubGlobal("fetch", mockFetch(200, PAPER_RESPONSE));
-    const result = await lookupPaperByDoi("10.5555/3295222.3295349");
-    expect(result).toEqual(EXPECTED_METADATA);
-  });
-
-  it("encodes DOI in the URL path", async () => {
-    const fetchMock = mockFetch(200, PAPER_RESPONSE);
-    vi.stubGlobal("fetch", fetchMock);
-    await lookupPaperByDoi("10.1000/xyz 123");
-    const url = fetchMock.mock.calls[0][0] as string;
-    expect(url).toContain("DOI%3A10.1000%2Fxyz%20123");
-  });
-
-  it("returns null on 404", async () => {
-    vi.stubGlobal("fetch", mockFetch(404, {}));
-    const result = await lookupPaperByDoi("10.9999/nonexistent");
-    expect(result).toBeNull();
-  });
-
-  it("handles null/empty DOI gracefully", async () => {
-    const result = await lookupPaperByDoi("");
-    expect(result).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// lookupPaperById
-// ---------------------------------------------------------------------------
-
-describe("lookupPaperById", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("returns PaperMetadata on success", async () => {
-    vi.stubGlobal("fetch", mockFetch(200, PAPER_RESPONSE));
-    const result = await lookupPaperById("abc123");
-    expect(result).toEqual(EXPECTED_METADATA);
-  });
-
-  it("includes the paper ID in the URL", async () => {
-    const fetchMock = mockFetch(200, PAPER_RESPONSE);
-    vi.stubGlobal("fetch", fetchMock);
-    await lookupPaperById("abc123");
-    const url = fetchMock.mock.calls[0][0] as string;
-    expect(url).toContain("/paper/abc123");
-  });
-
-  it("returns null on 404", async () => {
-    vi.stubGlobal("fetch", mockFetch(404, {}));
-    const result = await lookupPaperById("nonexistent");
-    expect(result).toBeNull();
-  });
-
-  it("handles null/empty ID gracefully", async () => {
-    const result = await lookupPaperById("");
-    expect(result).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// enrichReferences
-// ---------------------------------------------------------------------------
-
-describe("enrichReferences", () => {
+// Test 4: Header conditional — apiKey present → every fetch has x-api-key header
+describe("enrichReferences — x-api-key header", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
-
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
-  it("prefers DOI lookup over title search when DOI is present", async () => {
-    const fetchMock = mockFetch(200, PAPER_RESPONSE);
-    vi.stubGlobal("fetch", fetchMock);
-
-    const refs = [{ id: 1, title: "Some Title", doi: "10.5555/3295222.3295349" }];
-    const promise = enrichReferences(refs);
-    await vi.runAllTimersAsync();
-    const result = await promise;
-
-    // Should use DOI endpoint (contains "DOI%3A" in URL), not search endpoint
-    const url = fetchMock.mock.calls[0][0] as string;
-    expect(url).toContain("DOI%3A");
-    expect(result.get(1)).toEqual(EXPECTED_METADATA);
-  });
-
-  it("falls back to title search when no DOI", async () => {
-    const fetchMock = mockFetch(200, { data: [PAPER_RESPONSE] });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const refs = [{ id: 2, title: "Attention Is All You Need", doi: null }];
-    const promise = enrichReferences(refs);
-    await vi.runAllTimersAsync();
-    const result = await promise;
-
-    const url = fetchMock.mock.calls[0][0] as string;
-    expect(url).toContain("paper/search");
-    expect(result.get(2)).toEqual(EXPECTED_METADATA);
-  });
-
-  it("skips refs with no title and no DOI", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    const refs = [{ id: 3, title: null, doi: null }];
-    const promise = enrichReferences(refs);
-    await vi.runAllTimersAsync();
-    const result = await promise;
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(result.size).toBe(0);
-  });
-
-  it("returns an empty map for an empty refs array", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    const promise = enrichReferences([]);
-    await vi.runAllTimersAsync();
-    const result = await promise;
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(result.size).toBe(0);
-  });
-
-  it("skips refs where fetch returns null and continues with others", async () => {
-    let callCount = 0;
-    const fetchMock = vi.fn().mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) {
-        return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+  it("sends x-api-key header when apiKey is provided", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [FULL_PAPER_RESPONSE],
+        });
       }
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => ({ data: [PAPER_RESPONSE] }),
+        json: async () => ({ paperId: "abc123" }),
       });
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const refs = [
-      { id: 10, title: "Not Found Paper", doi: null },
-      { id: 11, title: "Attention Is All You Need", doi: null },
-    ];
-    const promise = enrichReferences(refs);
+    const refs = [{ id: 1, title: "Paper A", doi: "10.1/a" }];
+    const promise = enrichReferences(refs, { apiKey: "test-key" });
     await vi.runAllTimersAsync();
-    const result = await promise;
+    await promise;
 
-    expect(result.has(10)).toBe(false);
-    expect(result.has(11)).toBe(true);
+    for (const [, init] of fetchMock.mock.calls as [string, RequestInit?][]) {
+      const headers = init?.headers as Record<string, string> | undefined;
+      expect(headers?.["x-api-key"]).toBe("test-key");
+    }
   });
 
-  it("processes multiple refs with delays between them", async () => {
-    const fetchMock = mockFetch(200, { data: [PAPER_RESPONSE] });
+  it("does not send x-api-key when no apiKey", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [FULL_PAPER_RESPONSE],
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ paperId: "abc123" }),
+      });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
-    const refs = [
-      { id: 1, title: "Paper A", doi: null },
-      { id: 2, title: "Paper B", doi: null },
-      { id: 3, title: "Paper C", doi: null },
-    ];
+    const refs = [{ id: 1, title: "Paper A", doi: "10.1/a" }];
     const promise = enrichReferences(refs);
     await vi.runAllTimersAsync();
-    const result = await promise;
+    await promise;
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(result.size).toBe(3);
+    for (const [, init] of fetchMock.mock.calls as [string, RequestInit?][]) {
+      const headers = init?.headers as Record<string, string> | undefined;
+      expect(headers?.["x-api-key"]).toBeUndefined();
+    }
+  });
+});
+
+// Test 5: Unresolved refs — DOI 404 + empty search → metadata null, skipped from batch
+describe("enrichReferences — unresolved refs", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("returns metadata: null for unresolvable ref, skips it from batch", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [],
+        });
+      }
+      // DOI lookup → 404
+      if (url.includes("DOI%3A")) {
+        return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+      }
+      // search/match → empty data
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [] }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const refs = [{ id: 1, title: "Nonexistent Paper", doi: "10.9999/nope" }];
+    const promise = enrichReferences(refs);
+    await vi.runAllTimersAsync();
+    const results = await promise;
+
+    expect(results).toHaveLength(1);
+    expect(results[0].refId).toBe(1);
+    expect(results[0].metadata).toBeNull();
+
+    // batch POST should not have been called (no resolved ids)
+    const postCalls = (fetchMock.mock.calls as [string, RequestInit?][]).filter(
+      ([, init]) => init?.method === "POST"
+    );
+    expect(postCalls).toHaveLength(0);
+  });
+});
+
+// Test 6: Null-safe mapping — missing optional fields → null, no throw
+describe("mapPaper — null-safe", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("maps null for missing openAccessPdf, tldr, citationStyles, influentialCitationCount", async () => {
+    const minimalPaper = {
+      paperId: "min1",
+      title: "Minimal Paper",
+      authors: [],
+      year: 2020,
+      externalIds: null,
+      abstract: null,
+      venue: null,
+      citationCount: null,
+      // missing: influentialCitationCount, openAccessPdf, isOpenAccess, tldr, citationStyles
+    };
+    vi.stubGlobal("fetch", mockFetch(200, [minimalPaper]));
+
+    const results = await fetchPaperBatch(["min1"]);
+    expect(results[0]).toMatchObject({
+      paperId: "min1",
+      influentialCitationCount: null,
+      openAccessPdfUrl: null,
+      isOpenAccess: null,
+      tldr: null,
+      bibtex: null,
+      externalIds: null,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolvePaperId
+// ---------------------------------------------------------------------------
+
+describe("resolvePaperId", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns paperId via DOI lookup when DOI present", async () => {
+    vi.stubGlobal("fetch", mockFetch(200, { paperId: "abc123" }));
+    const id = await resolvePaperId({ id: 1, title: "T", doi: "10.1/a" });
+    expect(id).toBe("abc123");
+  });
+
+  it("falls back to search/match when DOI absent", async () => {
+    const fetchMock = mockFetch(200, { data: [{ paperId: "xyz789" }] });
+    vi.stubGlobal("fetch", fetchMock);
+    const id = await resolvePaperId({ id: 1, title: "My Paper", doi: null });
+    expect(id).toBe("xyz789");
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("search/match");
+  });
+
+  it("returns null when DOI 404 and no title", async () => {
+    vi.stubGlobal("fetch", mockFetch(404, {}));
+    const id = await resolvePaperId({ id: 1, title: null, doi: "10.9999/nope" });
+    expect(id).toBeNull();
+  });
+
+  it("returns null when search/match returns empty data", async () => {
+    vi.stubGlobal("fetch", mockFetch(200, { data: [] }));
+    const id = await resolvePaperId({ id: 1, title: "Unknown", doi: null });
+    expect(id).toBeNull();
   });
 });

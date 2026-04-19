@@ -38,10 +38,11 @@ interface PdfViewerProps {
   containerRef?: React.RefObject<HTMLDivElement | null>;
   markers?: MarkerRect[];
   userHighlights?: UserHighlight[];
+  hiddenLayerIds?: Set<string>;
   onPdfLoad?: (pdf: unknown) => void;
 }
 
-export function PdfViewer({ url, containerRef: externalRef, markers = [], userHighlights = [], onPdfLoad }: PdfViewerProps) {
+export function PdfViewer({ url, containerRef: externalRef, markers = [], userHighlights = [], hiddenLayerIds, onPdfLoad }: PdfViewerProps) {
   usePdfTextSelection();
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
@@ -222,6 +223,7 @@ export function PdfViewer({ url, containerRef: externalRef, markers = [], userHi
                     zoom={zoom}
                     markers={markers.filter((m) => m.pageNumber === pageNumber)}
                     userHighlights={userHighlights.filter((h) => (h.rects ?? []).some((r) => r.page === pageNumber))}
+                    hiddenLayerIds={hiddenLayerIds}
                   />
                 );
               }

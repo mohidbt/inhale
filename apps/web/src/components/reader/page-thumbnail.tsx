@@ -106,7 +106,7 @@ export function PageThumbnail({ pageNumber, pdfDoc, width = 120, onClick }: Prop
       style={{ minHeight: size ? size.h + 24 : Math.round(width * 1.414) + 24 }}
     >
       <div
-        className="overflow-hidden rounded border bg-white shadow-sm"
+        className="overflow-hidden rounded border bg-card shadow-sm"
         style={{
           width,
           height: size ? size.h : Math.round(width * 1.414),

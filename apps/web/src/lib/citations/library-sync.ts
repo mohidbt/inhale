@@ -1,9 +1,10 @@
 import type { DocumentReference } from "@/components/reader/citation-card";
+import type { Author } from "@/lib/citations/author-utils";
 
 export interface LibraryReferenceInput {
   userId: string;
   title: string;
-  authors: string | null;
+  authors: Author[] | null;
   year: string | null;
   doi: string | null;
   url: string | null;

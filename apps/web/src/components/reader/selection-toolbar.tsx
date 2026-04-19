@@ -111,9 +111,10 @@ export function SelectionToolbar({ rect, onHighlight, onDismiss, onComment, onAs
         <button
           type="button"
           key={c.name}
-          className={`h-6 w-6 rounded-full ${c.class} border border-black/10 hover:ring-2 ring-offset-1`}
+          className={`size-6 rounded-full ${c.class} border border-black/10 hover:ring-2 ring-offset-1`}
           onClick={() => onHighlight(c.name)}
           title={c.name}
+          aria-label={`Highlight ${c.name}`}
         />
       ))}
       {onComment && !editingHighlightId && (

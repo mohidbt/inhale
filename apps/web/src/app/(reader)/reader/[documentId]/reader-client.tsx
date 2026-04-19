@@ -19,6 +19,7 @@ import { useTextSelection } from "@/hooks/use-text-selection";
 import { useReaderState } from "@/hooks/use-reader-state";
 import { useCitationClick } from "@/hooks/use-citation-click";
 import { useUserHighlights } from "@/hooks/use-user-highlights";
+import { useAIHighlightRuns } from "@/hooks/use-ai-highlight-runs";
 
 const PdfViewer = dynamic(
   () => import("@/components/reader/pdf-viewer").then((m) => ({ default: m.PdfViewer })),
@@ -191,6 +192,26 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
     loading: highlightsLoading,
     error: highlightsError,
   } = useUserHighlights(documentId, refreshKey);
+
+  // AI auto-highlight runs — fetched at page level so the sidebar Runs section
+  // stays in sync with overlay filtering. `refreshKey` re-fetches after delete.
+  const {
+    runs: aiRuns,
+    hiddenRunIds,
+    toggleRun,
+    ensureVisible: ensureRunVisible,
+    deleteRun,
+    rebuildRun,
+    rebuildingRunId,
+  } = useAIHighlightRuns(documentId, refreshKey);
+
+  const handleReviewRun = useCallback(
+    (runId: string) => {
+      ensureRunVisible(runId);
+      setSidebarOpen(true);
+    },
+    [ensureRunVisible]
+  );
 
   useEffect(() => {
     setCitationsLoading(true);
@@ -550,6 +571,16 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                     setChatOpen(true);
                   }}
                   onDelete={handleSidebarDelete}
+                  runs={aiRuns}
+                  hiddenRunIds={hiddenRunIds}
+                  onToggleRun={toggleRun}
+                  onDeleteRun={(runId) =>
+                    void deleteRun(runId, () => setRefreshKey((k) => k + 1))
+                  }
+                  onRebuildRun={(runId) =>
+                    void rebuildRun(runId, () => setRefreshKey((k) => k + 1))
+                  }
+                  rebuildingRunId={rebuildingRunId}
                 />
               ),
             });
@@ -568,6 +599,8 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   dockControl={<DockMenu dock={chatDock} onChange={setChatDock} onClose={() => setChatOpen(false)} />}
                   currentPage={currentPage}
                   processingStatus={processingStatus}
+                  onHighlightsChanged={() => setRefreshKey((k) => k + 1)}
+                  onReviewRun={handleReviewRun}
                 />
               ),
             });
@@ -664,6 +697,7 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   containerRef={pdfScrollRef}
                   markers={markers}
                   userHighlights={userHighlights}
+                  hiddenLayerIds={hiddenRunIds}
                   onPdfLoad={setPdfDoc}
                 />
               </Panel>

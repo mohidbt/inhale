@@ -43,7 +43,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Sign in</CardTitle>
+          <CardTitle className="font-display text-3xl font-normal">Sign in</CardTitle>
           <CardDescription>Enter your email and password to continue</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

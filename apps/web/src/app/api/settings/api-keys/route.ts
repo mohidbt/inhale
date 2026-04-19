@@ -5,7 +5,7 @@ import { userApiKeys } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { encrypt } from "@/lib/encryption";
 
-const VALID_PROVIDER_TYPES = ["llm", "voice", "ocr"] as const;
+const VALID_PROVIDER_TYPES = ["llm", "voice", "ocr", "references"] as const;
 type ProviderType = (typeof VALID_PROVIDER_TYPES)[number];
 
 export async function GET(request: NextRequest) {
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     apiKey.trim() === ""
   ) {
     return NextResponse.json(
-      { error: "providerType, providerName, and apiKey are required. providerType must be one of: llm, voice, ocr." },
+      { error: "providerType, providerName, and apiKey are required. providerType must be one of: llm, voice, ocr, references." },
       { status: 422 }
     );
   }

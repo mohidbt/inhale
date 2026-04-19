@@ -1,5 +1,9 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
+import { configDotenv } from "dotenv";
+
+// Load .env.local so DATABASE_URL is available in tests
+configDotenv({ path: path.resolve(__dirname, ".env.local") });
 
 export default defineConfig({
   test: {

@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { documents, documentReferences } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
-import { enrichReferences } from "@/lib/citations/semantic-scholar";
+import { enrichReferences, type EnrichmentResult } from "@/lib/citations/semantic-scholar";
+import { getUserS2Key } from "@/lib/byok";
 
 export async function POST(
   request: NextRequest,
@@ -53,30 +54,41 @@ export async function POST(
       return NextResponse.json({ enriched: 0, total: 0 });
     }
 
-    // Enrich references via Semantic Scholar
-    const enriched = await enrichReferences(refs);
+    // Enrich references via Semantic Scholar two-pass pipeline
+    const s2Key = await getUserS2Key(session.user.id);
+    const results = await enrichReferences(refs, { apiKey: s2Key ?? undefined });
+
+    type ResolvedResult = EnrichmentResult & { metadata: NonNullable<EnrichmentResult["metadata"]> };
+    const enrichedResults = results.filter((r): r is ResolvedResult => r.metadata !== null);
 
     // Update each matched reference in parallel (each targets a distinct id)
     await Promise.all(
-      Array.from(enriched).map(([refId, metadata]) =>
+      enrichedResults.map(({ refId, metadata }) =>
         db
           .update(documentReferences)
           .set({
-            semanticScholarId: metadata.semanticScholarId,
+            semanticScholarId: metadata.paperId,
             title: metadata.title,
-            authors: metadata.authors || null,
-            year: metadata.year,
-            doi: metadata.doi,
-            url: metadata.url,
+            authors: metadata.authors.length > 0 ? metadata.authors : null,
+            year: metadata.year != null ? String(metadata.year) : null,
+            doi: metadata.externalIds?.DOI ?? null,
+            url: metadata.paperId
+              ? `https://www.semanticscholar.org/paper/${metadata.paperId}`
+              : null,
             abstract: metadata.abstract,
             venue: metadata.venue,
             citationCount: metadata.citationCount,
+            influentialCitationCount: metadata.influentialCitationCount,
+            openAccessPdfUrl: metadata.openAccessPdfUrl,
+            tldrText: metadata.tldr,
+            externalIds: metadata.externalIds,
+            bibtex: metadata.bibtex,
           })
           .where(eq(documentReferences.id, refId))
       )
     );
 
-    return NextResponse.json({ enriched: enriched.size, total });
+    return NextResponse.json({ enriched: enrichedResults.length, total });
   } catch (err) {
     console.error("[citations/enrich] failed for document", documentId, err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
