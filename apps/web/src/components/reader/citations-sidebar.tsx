@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback, type ReactNode } from "react";
+import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import type { CitationWithStatus } from "@/components/reader/citation-card";
-
-// Strip leading "[n] " or "n. " marker prefix that parseBibLines stores in rawText.
-const MARKER_PREFIX_RE = /^(?:\[\d{1,3}\]\s+|\d{1,3}\.\s+)/;
+import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { BookOpen, FileSearch, Loader2 } from "lucide-react";
+import { CitationCard, type CitationWithStatus } from "@/components/reader/citation-card";
+import { toast } from "sonner";
 
 interface CitationsSidebarProps {
   documentId: number;
@@ -18,6 +19,49 @@ interface CitationsSidebarProps {
 
 export function CitationsSidebar({ documentId, open, citations, loading, onExtracted, dockControl }: CitationsSidebarProps) {
   const [extracting, setExtracting] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const enrichFiredRef = useRef(false);
+  // Keep latest callback in a ref so the enrich effect doesn't need it as a dep.
+  // Including an inline onExtracted in deps re-runs the effect on every parent
+  // render, causing double-fire of the enrich POST.
+  const onExtractedRef = useRef(onExtracted);
+  useEffect(() => { onExtractedRef.current = onExtracted; });
+
+  // Reset enrich gate when document changes
+  useEffect(() => {
+    enrichFiredRef.current = false;
+  }, [documentId]);
+
+  // Auto-enrich once per session open when any ref lacks semanticScholarId
+  useEffect(() => {
+    if (!open || citations.length === 0) return;
+    if (!citations.some((r) => !r.semanticScholarId)) return;
+    if (enrichFiredRef.current) return;
+
+    enrichFiredRef.current = true;
+    const controller = new AbortController();
+    setEnriching(true);
+
+    fetch(`/api/documents/${documentId}/citations/enrich`, { method: "POST", signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`enrich failed: ${res.status}`);
+        return res.json();
+      })
+      .then(() => {
+        onExtractedRef.current?.();
+      })
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        console.error("[citations-sidebar] enrich error", err);
+        toast.error("Enrichment failed. Citations shown with available data.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setEnriching(false);
+      });
+
+    return () => controller.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, citations, documentId]);
 
   const handleExtract = useCallback(async () => {
     setExtracting(true);
@@ -37,31 +81,23 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
         <h2 className="truncate text-sm font-semibold">Citations</h2>
         {dockControl}
       </div>
+      {enriching && (
+        <Alert className="rounded-none border-x-0 border-t-0 px-4">
+          <BookOpen />
+          <AlertTitle>Enriching from Semantic Scholar…</AlertTitle>
+        </Alert>
+      )}
       <div className="flex-1 overflow-auto p-4">
         {loading && (
-          <div className="flex items-center gap-2">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-            <p className="text-xs text-muted-foreground">Loading…</p>
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
           </div>
         )}
         {!loading && citations.length === 0 && (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-muted-foreground/50"
-              aria-hidden="true"
-            >
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-            </svg>
+          <div className="flex flex-col gap-2">
+            <FileSearch className="text-muted-foreground/50" aria-hidden />
             <p className="text-sm font-medium text-muted-foreground">No citations detected</p>
             <p className="text-xs text-muted-foreground/70">
               This document may use a citation format not yet supported.
@@ -75,7 +111,7 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
             >
               {extracting ? (
                 <>
-                  <span className="mr-2 h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+                  <Loader2 data-icon="inline-start" className="animate-spin" />
                   Extracting…
                 </>
               ) : (
@@ -85,32 +121,10 @@ export function CitationsSidebar({ documentId, open, citations, loading, onExtra
           </div>
         )}
         {!loading && citations.length > 0 && (
-          <div className="space-y-2">
-            {citations.map((c) => {
-              // Prefer structured fields: authors (year) is clean even when rawText is
-              // garbled by two-column PDF layouts interleaving bibliography with body text.
-              // Fall back to a hard-capped rawText (120 chars) to avoid showing junk, then
-              // title, then markerText.
-              const structuredLabel =
-                c.authors && c.year
-                  ? `${c.authors} (${c.year})`
-                  : c.authors ?? null;
-              const rawLabel = c.rawText
-                ? c.rawText.replace(MARKER_PREFIX_RE, "").trim().slice(0, 120)
-                : null;
-              const label = structuredLabel ?? rawLabel ?? c.title ?? c.markerText;
-              return (
-                <div
-                  key={c.id}
-                  className="rounded border px-3 py-2 text-xs leading-relaxed"
-                >
-                  <span className="mr-2 font-mono text-muted-foreground">
-                    [{c.markerIndex}]
-                  </span>
-                  <span className="line-clamp-2">{label}</span>
-                </div>
-              );
-            })}
+          <div className="flex flex-col gap-2">
+            {citations.map((c) => (
+              <CitationCard key={c.id} citation={c} variant="compact" />
+            ))}
           </div>
         )}
       </div>
