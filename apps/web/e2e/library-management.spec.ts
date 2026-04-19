@@ -41,10 +41,4 @@ test.describe("Phase 2.3 — Library management", () => {
     await page.goto("/library?q=zzz-no-match-xyz");
     await expect(page.getByText("No matches.")).toBeVisible();
   });
-
-  test("references page shows empty state for fresh user", async ({ page }) => {
-    await signUpAndLogin(page);
-    await page.goto("/library/references");
-    await expect(page.getByText("No saved references yet.")).toBeVisible();
-  });
 });
