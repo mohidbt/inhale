@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface DocumentCardProps {
   id: number;
@@ -30,6 +31,9 @@ export function DocumentCard({
 }: DocumentCardProps) {
   const [showDialog, setShowDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showRename, setShowRename] = useState(false);
+  const [renameValue, setRenameValue] = useState(title);
+  const [isRenaming, startRename] = useTransition();
   const router = useRouter();
 
   const formattedDate = new Date(createdAt).toLocaleDateString("en-US", {
@@ -53,6 +57,27 @@ export function DocumentCard({
     }
   }
 
+  function handleRename() {
+    const next = renameValue.trim();
+    if (!next || next.length > 255 || next === title) {
+      setShowRename(false);
+      return;
+    }
+    startRename(async () => {
+      const res = await fetch(`/api/documents/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+      if (!res.ok) {
+        alert("Failed to rename document.");
+        return;
+      }
+      setShowRename(false);
+      router.refresh();
+    });
+  }
+
   return (
     <>
       <div className="group relative rounded-lg border bg-card hover:border-primary/60 transition-colors">
@@ -71,6 +96,22 @@ export function DocumentCard({
             {formattedDate}
           </p>
         </Link>
+
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            setRenameValue(title);
+            setShowRename(true);
+          }}
+          className="absolute top-2 right-9 opacity-0 group-hover:opacity-100 transition-opacity rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label={`Rename ${title}`}
+          data-testid="document-rename-button"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+          </svg>
+        </button>
 
         <button
           onClick={(e) => {
@@ -123,6 +164,34 @@ export function DocumentCard({
               disabled={deleting}
             >
               {deleting ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRename} onOpenChange={setShowRename}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="tracking-tight">Rename document</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              maxLength={255}
+              autoFocus
+              data-testid="document-rename-input"
+              onKeyDown={(e) => { if (e.key === "Enter") handleRename(); }}
+              className="text-base"
+            />
+            <p className="text-xs text-muted-foreground font-mono truncate" title={filename}>
+              {filename}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRename(false)} disabled={isRenaming}>Cancel</Button>
+            <Button onClick={handleRename} disabled={isRenaming} data-testid="document-rename-submit">
+              {isRenaming ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

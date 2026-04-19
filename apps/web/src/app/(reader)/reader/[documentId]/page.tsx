@@ -1,9 +1,10 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect, notFound } from "next/navigation";
+import { after } from "next/server";
 import { db } from "@/db";
 import { documents } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { ReaderClient } from "./reader-client";
 
 export default async function ReaderPage({
@@ -29,6 +30,14 @@ export default async function ReaderPage({
     .limit(1);
 
   if (!doc) notFound();
+
+  after(async () => {
+    await db
+      .update(documents)
+      .set({ lastOpenedAt: sql`now()` })
+      .where(and(eq(documents.id, doc.id), eq(documents.userId, session.user.id)))
+      .catch((err) => console.error("[reader] last_opened_at stamp failed", err));
+  });
 
   return (
     <ReaderClient
