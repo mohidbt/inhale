@@ -4,6 +4,7 @@ export * from "./auth";
 export * from "./user-highlights";
 export * from "./document-sections";
 export * from "./document-chunks";
+export * from "./document-segments";
 export * from "./processing-jobs";
 export * from "./document-outlines";
 export * from "./agent-conversations";

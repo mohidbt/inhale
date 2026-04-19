@@ -57,6 +57,13 @@
       "when": 1776591559078,
       "tag": "0007_puzzling_secret_warriors",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776621324582,
+      "tag": "0008_awesome_proudstar",
+      "breakpoints": true
     }
   ]
 }
