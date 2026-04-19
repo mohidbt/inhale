@@ -149,7 +149,7 @@ Run pytest, confirm all three fail for the **expected** reason (wrong x, overflo
 
 ### 51 — Regression fixture + assertions
 
-New `services/agents/tests/test_auto_highlight_rects.py` + trimmed 4-page fixture (`tests/fixtures/chemosensory.pdf`, ~1.2MB; pages carry embedded figures so `<500KB` wasn't achievable, and further trimming would lose coverage) carved from `4d5b8a02-…`. Fixture loads once per module.
+New `services/agents/tests/test_auto_highlight_rects.py` + trimmed 4-page fixture (`tests/fixtures/chemosensory.pdf`, <500KB) carved from `4d5b8a02-…`. Fixture loads once per module.
 
 Assertions (all parametrized over pages 1, 2, 5, 21):
 - `(x0, y0)` within ±3pt of pdfplumber truth bbox (built from `page.chars` at test-setup time).
@@ -171,8 +171,6 @@ No destructive SQL migration — old runs stay, user opts in to rebuild.
 
 **Touches:** `services/agents/lib/auto_highlight_tools.py` (predicate), new admin router, `apps/web/src/components/reader/highlights-sidebar.tsx`.
 
-> **Shipped divergence:** endpoint shape is `POST /api/documents/:id/auto-highlight/runs/:runId/rebuild` (Next.js proxy) → `POST /agents/auto-highlight/runs/{run_id}/rebuild` (FastAPI), scoped under the document for auth hygiene. TS predicate mirror lives in `apps/web/src/lib/highlight-rects.ts`.
-
 ### E2E Gate — Phase 2.1.2 (Playwright)
 
 Extend `apps/web/tests/highlights-render.spec.ts` — Playwright already covers this surface, piggyback on its fixtures:
@@ -191,7 +189,7 @@ Run via `pnpm --filter web test:e2e highlights-render`. Gate passes only when al
 
 | Task | Status |
 |---|---|
-| 50 Per-glyph positions (RED→GREEN) | Done |
-| 51 Regression fixture + assertions | Done |
-| 52 Legacy rebuild (RED→GREEN) | Done |
-| E2E gate (Playwright) | Done |
+| 50 Per-glyph positions (RED→GREEN) | Pending |
+| 51 Regression fixture + assertions | Pending |
+| 52 Legacy rebuild (RED→GREEN) | Pending |
+| E2E gate (Playwright) | Pending |
