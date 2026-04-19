@@ -6,7 +6,7 @@ vi.mock("@/lib/encryption", () => ({ decrypt: vi.fn() }));
 
 import { db } from "@/db";
 import { decrypt } from "@/lib/encryption";
-import { getUserS2Key } from "@/lib/byok";
+import { getUserS2Key, getDecryptedChandraKey } from "@/lib/byok";
 
 const mockDecrypt = vi.mocked(decrypt);
 
@@ -37,5 +37,23 @@ describe("getUserS2Key", () => {
 
     expect(mockDecrypt).toHaveBeenCalledWith("encrypted-blob");
     expect(result).toBe("my-s2-api-key");
+  });
+});
+
+describe("getDecryptedChandraKey", () => {
+  it("returns null when no row exists", async () => {
+    mockSelect([]);
+    const result = await getDecryptedChandraKey("user-1");
+    expect(result).toBeNull();
+  });
+
+  it("returns decrypted key when a chandra ocr row exists", async () => {
+    mockSelect([{ encryptedKey: "chandra-encrypted" }]);
+    mockDecrypt.mockReturnValue("chandra-secret");
+
+    const result = await getDecryptedChandraKey("user-1");
+
+    expect(mockDecrypt).toHaveBeenCalledWith("chandra-encrypted");
+    expect(result).toBe("chandra-secret");
   });
 });

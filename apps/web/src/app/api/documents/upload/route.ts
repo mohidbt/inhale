@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { saveFile } from "@/lib/storage";
 import { extractPdfPages } from "@/lib/ai/pdf-text";
 import { chunkPages } from "@/lib/ai/chunking";
-import { getDecryptedApiKey } from "@/lib/byok";
+import { getDecryptedApiKey, getDecryptedChandraKey } from "@/lib/byok";
 import { signRequest } from "@/lib/agents/sign-request";
 
 export async function POST(request: NextRequest) {
@@ -74,6 +74,35 @@ export async function POST(request: NextRequest) {
         body: payload,
       });
       if (!agentRes.ok) throw new Error(`embed-chunks failed: ${agentRes.status}`);
+
+      // Call chandra-segments to detect explainable segments.
+      // Short-circuit if user has no Chandra key — avoids a pointless round-trip on every upload.
+      // Follow-up: move this to a background job if synchronous latency becomes an issue.
+      const chandraKey = await getDecryptedChandraKey(session.user.id);
+      if (chandraKey) {
+        try {
+          const chandraBody = JSON.stringify({ document_id: doc.id, file_path: doc.filePath });
+          const { headers: chandraHeaders } = signRequest({
+            method: "POST",
+            path: "/agents/chandra-segments",
+            body: chandraBody,
+            userId: session.user.id,
+            documentId: doc.id,
+            llmKey: apiKey,
+            ocrKey: chandraKey,
+          });
+          const chandraRes = await fetch(`${process.env.AGENTS_URL}/agents/chandra-segments`, {
+            method: "POST",
+            headers: { ...chandraHeaders, "Content-Type": "application/json" },
+            body: chandraBody,
+          });
+          if (!chandraRes.ok) {
+            console.warn(`chandra-segments returned ${chandraRes.status} for doc ${doc.id}`);
+          }
+        } catch (chandraErr) {
+          console.warn("chandra-segments call failed (non-fatal)", chandraErr);
+        }
+      }
 
       await db
         .update(documents)
