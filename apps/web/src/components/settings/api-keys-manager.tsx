@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Info } from "lucide-react";
 
 type ProviderType = "llm" | "voice" | "ocr" | "references";
 type StorageMode = "cloud" | "browser_only";
@@ -115,8 +117,21 @@ export function ApiKeysManager() {
     }
   }
 
+  // Detect if Chandra key is configured
+  const hasChandraKey = keys.some(k => k.providerType === "ocr" && k.providerName === "chandra");
+
   return (
     <div className="space-y-8">
+      {/* Chandra Key Missing Banner */}
+      {!loading && !hasChandraKey && (
+        <Alert variant="default" data-testid="chandra-missing-banner">
+          <Info className="size-4" />
+          <AlertDescription>
+            Configure Chandra key to enable Smart Explanations on figures and formulas.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Add Key Form */}
       <Card className="p-6">
         <h2 className="text-lg font-medium mb-4">Add API Key</h2>
