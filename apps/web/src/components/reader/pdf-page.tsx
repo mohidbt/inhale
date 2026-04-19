@@ -12,6 +12,7 @@ interface PdfPageProps {
   zoom: number;
   markers?: MarkerRect[];
   userHighlights?: UserHighlight[];
+  hiddenLayerIds?: Set<string>;
 }
 
 export const PdfPage = memo(function PdfPage({
@@ -20,6 +21,7 @@ export const PdfPage = memo(function PdfPage({
   zoom,
   markers = [],
   userHighlights,
+  hiddenLayerIds,
 }: PdfPageProps) {
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
@@ -57,6 +59,7 @@ export const PdfPage = memo(function PdfPage({
           naturalWidth={naturalSize.width}
           naturalHeight={naturalSize.height}
           displayWidth={displayWidth}
+          hiddenLayerIds={hiddenLayerIds}
         />
       )}
     </div>

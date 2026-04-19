@@ -23,10 +23,15 @@ interface Props {
   naturalWidth: number;
   naturalHeight: number;
   displayWidth: number;
+  /** Runs (layerId) to hide from rendering. In-memory toggle. */
+  hiddenLayerIds?: Set<string>;
 }
 
-export function UserHighlightLayer({ highlights, pageNumber, naturalWidth, naturalHeight, displayWidth }: Props) {
+export function UserHighlightLayer({ highlights, pageNumber, naturalWidth, naturalHeight, displayWidth, hiddenLayerIds }: Props) {
   const scale = displayWidth / naturalWidth;
+  const visible = hiddenLayerIds && hiddenLayerIds.size > 0
+    ? highlights.filter((h) => !(h.layerId && hiddenLayerIds.has(h.layerId)))
+    : highlights;
   // The layer wrapper stays pointer-transparent so drags across empty space
   // still drive text selection on the underlying text layer. Individual
   // highlight rects opt back in so a click on a highlight can be detected
@@ -34,7 +39,7 @@ export function UserHighlightLayer({ highlights, pageNumber, naturalWidth, natur
   // container for `[data-highlight-id]` clicks).
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }} aria-hidden="true">
-      {highlights.flatMap((h) =>
+      {visible.flatMap((h) =>
         (h.rects ?? [])
           .filter((r) => r.page === pageNumber)
           .map((r, idx) => (

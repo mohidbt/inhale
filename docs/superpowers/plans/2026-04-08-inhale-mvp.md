@@ -29,7 +29,8 @@
 | 2.0.1 — Annotation-based detection (superscripts) | DONE | [phases/phase-2.0.1-annotations.md](phases/phase-2.0.1-annotations.md) |
 | 2.0.2 — UX polish & bugfixes | DONE | [phases/phase-2.0.2-ux-polish.md](phases/phase-2.0.2-ux-polish.md) · fixes: [2026-04-14-phase-2.0.2-fixes.md](2026-04-14-phase-2.0.2-fixes.md) |
 | 2.0.3 — Python agents service + framework migration | DONE | [phases/phase-2.0.3-langchain.md](phases/phase-2.0.3-langchain.md) |
-| 2.1 — AI Auto-Highlight | Pending | [phases/phase-2.1-auto-highlight.md](phases/phase-2.1-auto-highlight.md) |
+| 2.1 — AI Auto-Highlight (explicit `/highlight`) | DONE | [phases/phase-2.1-auto-highlight.md](phases/phase-2.1-auto-highlight.md) |
+| 2.1.1 — Implicit Auto-Highlight (chat toolbelt) | DONE | [phases/phase-2.1.1-implicit-highlight.md](phases/phase-2.1.1-implicit-highlight.md) |
 | 2.2 — Enriched Smart Citations | DONE | [phases/phase-2.2-citations-enriched.md](phases/phase-2.2-citations-enriched.md) |
 | 2.3 — Library Management (lite) | Pending | [phases/phase-2.3-library-lite.md](phases/phase-2.3-library-lite.md) |
 | 3.0a — Smart Explanation detection + icons | Pending | [phases/phase-3.0a-explain-detection.md](phases/phase-3.0a-explain-detection.md) |

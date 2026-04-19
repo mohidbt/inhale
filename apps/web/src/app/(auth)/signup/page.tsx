@@ -50,7 +50,7 @@ export default function SignupPage() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Create account</CardTitle>
+          <CardTitle className="font-display text-3xl font-normal">Create account</CardTitle>
           <CardDescription>Enter your details to get started</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
