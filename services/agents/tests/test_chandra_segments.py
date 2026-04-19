@@ -365,6 +365,8 @@ def test_happy_path_inserts_segments():
         call_args = mock_conn.executemany.call_args
         sql, rows = call_args[0]
         assert "INSERT INTO document_segments" in sql
+        # Assert exact column names to catch future column-name drift
+        assert "(document_id, page, kind, bbox, payload, order_index)" in sql
         assert len(rows) == len(EXPECTED_ROWS)
 
         # Spot-check the first row structure: (document_id, page, kind, bbox_json, payload_json, order_index)

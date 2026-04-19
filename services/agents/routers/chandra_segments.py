@@ -196,7 +196,7 @@ async def chandra_segments(
         await conn.executemany(
             """
             INSERT INTO document_segments
-              (document_id, page, kind, bbox_jsonb, payload_jsonb, order_index)
+              (document_id, page, kind, bbox, payload, order_index)
             VALUES ($1, $2, $3, $4, $5, $6)
             """,
             [
