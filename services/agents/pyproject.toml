@@ -12,6 +12,7 @@ dependencies = [
     "langchain-core>=1.0,<2.0",
     "langchain-openai",
     "pypdf",
+    "pdfplumber>=0.11,<1.0",
 ]
 
 [project.optional-dependencies]
