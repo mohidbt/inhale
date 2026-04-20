@@ -38,17 +38,21 @@ export function ExplainMarkerLayer({
   displayWidth,
   onMarkerClick,
 }: ExplainMarkerLayerProps) {
-  const scale = displayWidth / naturalWidth;
+  // bbox is stored as 0..1 fractions of page w/h (see chandra_segments.py).
+  // Render space = the <Page> element which sits at (displayWidth, displayHeight)
+  // with displayHeight derived from the page's aspect ratio.
+  const displayHeight = displayWidth * (naturalHeight / naturalWidth);
   const renderable = segments.filter((s) => RENDERABLE_KINDS.has(s.kind));
 
   return (
     <div
       data-testid="explain-marker-layer"
-      style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+      style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 10 }}
     >
       {renderable.map((segment) => {
-        const cssLeft = segment.bbox.x1 * scale + 4;
-        const cssTop = (naturalHeight - segment.bbox.y1) * scale;
+        // Anchor at top-right corner of the block's bbox; origin is top-left.
+        const cssLeft = segment.bbox.x1 * displayWidth + 4;
+        const cssTop = segment.bbox.y0 * displayHeight;
 
         return (
           <button

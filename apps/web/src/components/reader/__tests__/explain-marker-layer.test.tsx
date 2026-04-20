@@ -11,9 +11,10 @@ const BASE_PROPS = {
 };
 
 function seg(overrides: Partial<ExplainSegment> & Pick<ExplainSegment, "id" | "kind">): ExplainSegment {
+  // bbox values are 0..1 fractions (see chandra_segments.py).
   return {
     page: 0,
-    bbox: { x0: 100, y0: 200, x1: 300, y1: 250 },
+    bbox: { x0: 0.25, y0: 0.25, x1: 0.75, y1: 0.3125 },
     ...overrides,
   };
 }
@@ -65,16 +66,17 @@ describe("ExplainMarkerLayer", () => {
     expect(getByLabelText("Explain formula")).toBeTruthy();
   });
 
-  it("positions marker at bbox.x1 * scale + 4 left, (naturalHeight - bbox.y1) * scale top", () => {
-    // bbox: {x0:100, y0:200, x1:300, y1:250}, scale=2
-    // left = 300*2 + 4 = 604
-    // top  = (800 - 250) * 2 = 1100
+  it("positions marker at bbox.x1 * displayWidth + 4 left, bbox.y0 * displayHeight top", () => {
+    // bbox fractions: {x0:0.25, y0:0.25, x1:0.75, y1:0.3125}
+    // displayWidth=800, naturalWidth=400, naturalHeight=800 → displayHeight = 800 * (800/400) = 1600
+    // left = 0.75 * 800 + 4 = 604
+    // top  = 0.25 * 1600 = 400
     const { getByTestId } = render(
       <ExplainMarkerLayer segments={[seg({ id: 7, kind: "section_header" })]} {...BASE_PROPS} />
     );
     const el = getByTestId("explain-marker-7") as HTMLElement;
     expect(el.style.left).toBe("604px");
-    expect(el.style.top).toBe("1100px");
+    expect(el.style.top).toBe("400px");
   });
 
   it("calls onMarkerClick with segment id on click", () => {

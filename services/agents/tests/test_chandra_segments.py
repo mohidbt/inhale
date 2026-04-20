@@ -130,13 +130,17 @@ FIXTURE_JSON = {
     ],
 }
 
-# Expected parsed rows from FIXTURE_JSON (page, kind, bbox, payload):
+# Page dims from fixture: 612 x 792. Stored bboxes are normalized to [0,1].
+_PW, _PH = 612, 792
+def _n(x0, y0, x1, y1):
+    return {"x0": x0 / _PW, "y0": y0 / _PH, "x1": x1 / _PW, "y1": y1 / _PH}
+
 EXPECTED_ROWS = [
-    (0, "section_header", {"x0": 72, "y0": 700, "x1": 540, "y1": 730}, {"text": "Introduction", "heading_level": 1}),
-    (0, "paragraph",     {"x0": 72, "y0": 600, "x1": 540, "y1": 695}, {"text": "Some paragraph text here."}),
-    (0, "formula",       {"x0": 200, "y0": 550, "x1": 400, "y1": 590}, {"latex": "<math>E = mc^2</math>"}),
-    (1, "figure",        {"x0": 72, "y0": 500, "x1": 540, "y1": 750}, {"caption": "Figure 1: A chart."}),
-    (1, "table",         {"x0": 72, "y0": 300, "x1": 540, "y1": 490}, {"html": "<table><tr><td>A</td><td>B</td></tr></table>"}),
+    (0, "section_header", _n(72, 700, 540, 730), {"text": "Introduction", "heading_level": 1}),
+    (0, "paragraph",     _n(72, 600, 540, 695), {"text": "Some paragraph text here."}),
+    (0, "formula",       _n(200, 550, 400, 590), {"latex": "<math>E = mc^2</math>"}),
+    (1, "figure",        _n(72, 500, 540, 750), {"caption": "Figure 1: A chart."}),
+    (1, "table",         _n(72, 300, 540, 490), {"html": "<table><tr><td>A</td><td>B</td></tr></table>"}),
 ]
 
 
@@ -219,7 +223,7 @@ def test_parse_blocks_drops_missing_bbox():
 
     rows = _parse_blocks(doc)
     assert len(rows) == 1, f"Expected 1 row (valid block only), got {len(rows)}"
-    assert rows[0][2] == {"x0": 72, "y0": 600, "x1": 540, "y1": 695}
+    assert rows[0][2] == _n(72, 600, 540, 695)
 
 
 def test_html_unescape_in_caption():
@@ -374,7 +378,7 @@ def test_happy_path_inserts_segments():
         assert first[0] == 42          # document_id
         assert first[1] == 0           # page
         assert first[2] == "section_header"
-        assert json.loads(first[3]) == {"x0": 72, "y0": 700, "x1": 540, "y1": 730}
+        assert json.loads(first[3]) == _n(72, 700, 540, 730)
         assert json.loads(first[4]) == {"text": "Introduction", "heading_level": 1}
         assert first[5] == 0           # order_index
     finally:

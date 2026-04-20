@@ -4,12 +4,16 @@ Chandra JSON output (observed via datalab-python-sdk v0.5.0 / Datalab Marker API
   result.json: dict — top-level document node
     result.json["children"]: list of page-block dicts
       page["block_type"]: "Page"
+      page["bbox"]: [x0, y0, x1, y1] — page extents in image-pixel space (origin TOP-LEFT)
       page["children"]: list of block dicts, each block:
         block["block_type"]: str — one of the values below
-        block["bbox"]: [x0, y0, x1, y1] — PDF user-space coords, origin bottom-left
+        block["bbox"]: [x0, y0, x1, y1] — image-pixel coords, origin TOP-LEFT
         block["html"]: str — HTML representation of the block
         block["id"]: str — e.g. "/page/0/SectionHeader/0"
         block["children"]: list — nested child blocks (may be absent or empty)
+
+  Bboxes are stored NORMALIZED to fractions (0..1) of page width/height so the
+  frontend can position markers without knowing Chandra's render DPI.
 
   Known block_type values (Marker/Datalab):
     "SectionHeader", "Text", "Picture", "Figure", "Table",
@@ -118,18 +122,35 @@ def _build_payload(kind: str, block: dict[str, Any]) -> dict[str, Any]:
     return {"text": text}
 
 
-def _bbox_dict(bbox: list[float]) -> dict[str, float]:
-    """Convert [x0, y0, x1, y1] list to named dict."""
-    if len(bbox) >= 4:
-        return {"x0": bbox[0], "y0": bbox[1], "x1": bbox[2], "y1": bbox[3]}
-    return {"x0": 0.0, "y0": 0.0, "x1": 0.0, "y1": 0.0}
+def _normalized_bbox(bbox: list[float], page_w: float, page_h: float) -> dict[str, float]:
+    """Normalize [x0, y0, x1, y1] pixel bbox to 0..1 fractions of page size."""
+    x0, y0, x1, y1 = bbox[0], bbox[1], bbox[2], bbox[3]
+    return {
+        "x0": x0 / page_w,
+        "y0": y0 / page_h,
+        "x1": x1 / page_w,
+        "y1": y1 / page_h,
+    }
+
+
+def _page_dims(page_block: dict[str, Any]) -> tuple[float, float] | None:
+    """Extract (width, height) from the page's own bbox, or None if unusable."""
+    page_bbox = page_block.get("bbox")
+    if not page_bbox or len(page_bbox) < 4:
+        return None
+    w = page_bbox[2] - page_bbox[0]
+    h = page_bbox[3] - page_bbox[1]
+    if w <= 0 or h <= 0:
+        return None
+    return w, h
 
 
 def _parse_blocks(json_output: dict[str, Any]) -> list[tuple[int, str, dict, dict]]:
     """
     Parse the Marker JSON tree into a flat list of
     (page_index, kind, bbox_dict, payload_dict) tuples in page-major order.
-    Drops any block whose block_type has no kind mapping.
+    Drops any block whose block_type has no kind mapping, and any page whose
+    own bbox is missing (we can't normalize without page dims).
     """
     rows: list[tuple[int, str, dict, dict]] = []
     pages = json_output.get("children", [])
@@ -137,6 +158,11 @@ def _parse_blocks(json_output: dict[str, Any]) -> list[tuple[int, str, dict, dic
     for page_block in pages:
         if page_block.get("block_type") != "Page":
             continue
+        dims = _page_dims(page_block)
+        if dims is None:
+            logger.warning("Skipping page without usable bbox: %s", page_block.get("id"))
+            continue
+        page_w, page_h = dims
         page_id = page_block.get("id", "/page/0/Page/0")
         page_num = _page_index_from_id(page_id)
 
@@ -147,7 +173,7 @@ def _parse_blocks(json_output: dict[str, Any]) -> list[tuple[int, str, dict, dic
             raw_bbox = block.get("bbox")
             if not raw_bbox or len(raw_bbox) < 4:
                 continue
-            bbox = _bbox_dict(raw_bbox)
+            bbox = _normalized_bbox(raw_bbox, page_w, page_h)
             payload = _build_payload(kind, block)
             rows.append((page_num, kind, bbox, payload))
 
