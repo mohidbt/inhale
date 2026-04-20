@@ -20,6 +20,8 @@ import { useReaderState } from "@/hooks/use-reader-state";
 import { useCitationClick } from "@/hooks/use-citation-click";
 import { useUserHighlights } from "@/hooks/use-user-highlights";
 import { useAIHighlightRuns } from "@/hooks/use-ai-highlight-runs";
+import { useSegments } from "@/hooks/use-segments";
+import { buildExplainSeed } from "@/lib/reader/explain-seed";
 
 const PdfViewer = dynamic(
   () => import("@/components/reader/pdf-viewer").then((m) => ({ default: m.PdfViewer })),
@@ -192,6 +194,24 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
     loading: highlightsLoading,
     error: highlightsError,
   } = useUserHighlights(documentId, refreshKey);
+
+  // Document segments (section_header, figure, formula) for explain markers
+  const { segments } = useSegments(documentId);
+
+  const handleExplainClick = useCallback(
+    (segmentId: number) => {
+      const seg = segments.find((s) => s.id === segmentId);
+      if (!seg) return;
+      setChatSeed({
+        text: buildExplainSeed(seg),
+        pageNumber: seg.page + 1,
+        scope: "segment",
+        nonce: Date.now(),
+      });
+      setChatOpen(true);
+    },
+    [segments]
+  );
 
   // AI auto-highlight runs — fetched at page level so the sidebar Runs section
   // stays in sync with overlay filtering. `refreshKey` re-fetches after delete.
@@ -698,6 +718,8 @@ export function ReaderClient({ documentId, title, processingStatus }: ReaderClie
                   markers={markers}
                   userHighlights={userHighlights}
                   hiddenLayerIds={hiddenRunIds}
+                  segments={segments}
+                  onExplainClick={handleExplainClick}
                   onPdfLoad={setPdfDoc}
                 />
               </Panel>

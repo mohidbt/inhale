@@ -11,6 +11,7 @@ from routers import (
     chat,
     auto_highlight,
     auto_highlight_rebuild,
+    chandra_segments,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,3 +49,4 @@ app.include_router(outline.router)
 app.include_router(chat.router)
 app.include_router(auto_highlight.router)
 app.include_router(auto_highlight_rebuild.router)
+app.include_router(chandra_segments.router)

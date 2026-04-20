@@ -7,12 +7,15 @@ export interface SignInput {
   userId: string;
   documentId?: number;
   llmKey: string;
+  /** Not included in HMAC payload — same treatment as llmKey (replay risk bounded by FRESHNESS_SECONDS=60). */
+  ocrKey?: string;
 }
 
 export interface SignedHeaders {
   "X-Inhale-User-Id": string;
   "X-Inhale-Document-Id"?: string;
   "X-Inhale-LLM-Key": string;
+  "X-Inhale-OCR-Key"?: string;
   "X-Inhale-Ts": string;
   "X-Inhale-Sig": string;
 }
@@ -32,5 +35,6 @@ export function signRequest(input: SignInput): { headers: SignedHeaders; ts: str
     "X-Inhale-Sig": sig,
   };
   if (input.documentId !== undefined) h["X-Inhale-Document-Id"] = String(input.documentId);
+  if (input.ocrKey !== undefined) h["X-Inhale-OCR-Key"] = input.ocrKey;
   return { headers: h, ts };
 }

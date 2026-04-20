@@ -24,7 +24,7 @@ interface ApiKey {
 const DEFAULT_PROVIDER_NAMES: Record<ProviderType, string> = {
   llm: "openrouter",
   voice: "elevenlabs",
-  ocr: "mistral",
+  ocr: "chandra",
   references: "semantic-scholar",
 };
 

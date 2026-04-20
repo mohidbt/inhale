@@ -72,6 +72,12 @@ export function ChatPanel({
     text: string;
     pageNumber: number;
   } | null>(null);
+  // Segment context chip — shown when the user clicks an explain icon.
+  // prefix = pre-filled input text; payload = context shown in the chip.
+  const [segmentChip, setSegmentChip] = useState<{
+    prefix: string;
+    payload: string;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const viewportRef = useViewportTracking(scrollContainerRef);
@@ -96,6 +102,14 @@ export function ChatPanel({
     // field. The user types their own question.
     if (seed.scope === "selection" && seed.pageNumber != null) {
       setAttachedSelection({ text: seed.text, pageNumber: seed.pageNumber });
+      setUiScope("page");
+    } else if (seed.scope === "segment") {
+      // Split "Explain this X.\n\n<payload>" into prefix + payload chip.
+      const splitIdx = seed.text.indexOf("\n\n");
+      const prefix = splitIdx !== -1 ? seed.text.slice(0, splitIdx) : seed.text;
+      const payload = splitIdx !== -1 ? seed.text.slice(splitIdx + 2) : "";
+      setSegmentChip({ prefix, payload });
+      setInput(prefix);
       setUiScope("page");
     } else if (seed.scope === "page") {
       setUiScope("page");
@@ -237,6 +251,7 @@ export function ChatPanel({
 
   const dismissChip = () => {
     setAttachedSelection(null);
+    setSegmentChip(null);
     onClearSeed?.();
   };
 
@@ -249,6 +264,7 @@ export function ChatPanel({
   const handleNew = () => {
     clearMessages();
     dismissChip();
+    setInput("");
     setUiScope("paper");
     setHistoryOpen(false);
   };
@@ -381,13 +397,31 @@ export function ChatPanel({
                 Highlighted · Page {attachedSelection.pageNumber}
               </p>
               <p className="line-clamp-2 text-xs text-muted-foreground">
-                “{attachedSelection.text}”
+                "{attachedSelection.text}"
               </p>
             </div>
             <button
               type="button"
               onClick={dismissChip}
               aria-label="Remove highlighted context"
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
+        {segmentChip && segmentChip.payload && (
+          <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5">
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium text-foreground">Context</p>
+              <code className="block whitespace-pre-wrap break-all text-xs text-muted-foreground">
+                {segmentChip.payload}
+              </code>
+            </div>
+            <button
+              type="button"
+              onClick={dismissChip}
+              aria-label="Remove segment context"
               className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <X className="size-3.5" />

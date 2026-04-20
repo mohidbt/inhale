@@ -22,6 +22,23 @@ export async function getDecryptedApiKey(userId: string): Promise<string> {
   return decrypt(row.encryptedKey);
 }
 
+export async function getDecryptedChandraKey(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ encryptedKey: userApiKeys.encryptedKey })
+    .from(userApiKeys)
+    .where(
+      and(
+        eq(userApiKeys.userId, userId),
+        eq(userApiKeys.providerType, "ocr"),
+        eq(userApiKeys.providerName, "chandra"),
+      )
+    );
+
+  if (!row) return null;
+
+  return decrypt(row.encryptedKey);
+}
+
 export async function getUserS2Key(userId: string): Promise<string | null> {
   const [row] = await db
     .select({ encryptedKey: userApiKeys.encryptedKey })
