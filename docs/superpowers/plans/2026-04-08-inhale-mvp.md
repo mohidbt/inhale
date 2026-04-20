@@ -33,7 +33,7 @@
 | 2.1.1 — Implicit Auto-Highlight (chat toolbelt) | DONE | [phases/phase-2.1.1-implicit-highlight.md](phases/phase-2.1.1-implicit-highlight.md) |
 | 2.2 — Enriched Smart Citations | DONE | [phases/phase-2.2-citations-enriched.md](phases/phase-2.2-citations-enriched.md) |
 | 2.3 — Library Management (lite) | DONE | [phases/phase-2.3-library-lite.md](phases/phase-2.3-library-lite.md) |
-| 3.0a — Smart Explanation detection + icons | Pending | [phases/phase-3.0a-explain-detection.md](phases/phase-3.0a-explain-detection.md) |
+| 3.0a — Smart Explanation detection + icons | DONE | [phases/phase-3.0a-explain-detection.md](phases/phase-3.0a-explain-detection.md) |
 | 3.0b — Smart Explanation agent + history | Pending | [phases/phase-3.0b-explain-agent.md](phases/phase-3.0b-explain-agent.md) |
 | 3.1 — External Links & Deep References | Pending | [phases/phase-3.1-external-links.md](phases/phase-3.1-external-links.md) |
 | 3.2 — Voice Mode (push-to-talk) | Pending | [phases/phase-3.2-voice.md](phases/phase-3.2-voice.md) |
