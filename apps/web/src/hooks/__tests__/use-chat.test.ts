@@ -87,6 +87,32 @@ describe("useChat SSE parsing", () => {
     expect(last.progressSteps).toEqual(["finish"]);
   });
 
+  it("prefers detail over label when both present on highlight_progress", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        sseResponse([
+          sse({ type: "sources", sources: [] }),
+          sse({
+            type: "highlight_progress",
+            step: "semantic_search",
+            label: "Reading page…",
+            detail: "reading page 7",
+          }),
+        ]),
+      ),
+    );
+
+    const { result } = renderHook(() => useChat(1));
+    await act(async () => {
+      await result.current.sendMessage("q", viewport);
+    });
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+
+    const last = result.current.messages[result.current.messages.length - 1];
+    expect(last.progressSteps).toEqual(["reading page 7"]);
+  });
+
   it("leaves runId/highlightsCount undefined when stream has only tokens", async () => {
     vi.stubGlobal(
       "fetch",

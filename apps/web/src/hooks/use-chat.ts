@@ -117,6 +117,7 @@ export function useChat(documentId: number, options?: UseChatOptions) {
                 conversationId?: number;
                 step?: string;
                 label?: string;
+                detail?: string;
                 runId?: string;
                 count?: number;
               };
@@ -136,7 +137,7 @@ export function useChat(documentId: number, options?: UseChatOptions) {
                   return updated;
                 });
               } else if (parsed.type === "highlight_progress") {
-                const label = parsed.label || parsed.step;
+                const label = parsed.detail ?? parsed.label ?? parsed.step;
                 if (label) {
                   setMessages((prev) => {
                     const updated = [...prev];

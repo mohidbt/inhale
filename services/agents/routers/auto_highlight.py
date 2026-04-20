@@ -163,7 +163,7 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
                         for tc in m.tool_calls or []:
                             name = tc.get("name", "tool")
                             args = tc.get("args") or {}
-                            detail = _progress_detail(name, args)
+                            detail = progress_detail(name, args)
                             yield _sse(
                                 {"type": "progress", "step": name, "detail": detail}
                             )
@@ -256,7 +256,7 @@ async def auto_highlight(body: AutoHighlightBody, auth: InternalAuthDep, conn: C
     )
 
 
-def _progress_detail(name: str, args: dict) -> str:
+def progress_detail(name: str, args: dict) -> str:
     if name == "semantic_search":
         q = args.get("query", "")
         return f"searching: {q[:60]}" if q else "searching"
@@ -271,3 +271,7 @@ def _progress_detail(name: str, args: dict) -> str:
     if name == "finish":
         return "finishing"
     return name
+
+
+# Back-compat alias for existing tests.
+_progress_detail = progress_detail

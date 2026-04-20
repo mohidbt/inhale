@@ -339,6 +339,12 @@ def test_chat_emits_highlight_progress_and_done_events():
             assert "semantic_search" in steps
             assert "create_highlights" in steps
             assert all(e.get("label") for e in progress)
+            # detail is now included alongside label, computed from tool args
+            assert all("detail" in e for e in progress)
+            by_step = {e["step"]: e for e in progress}
+            assert "searching" in by_step["semantic_search"]["detail"]
+            assert "x" in by_step["semantic_search"]["detail"]
+            assert "highlight" in by_step["create_highlights"]["detail"]
 
             done = [e for e in events if isinstance(e, dict) and e.get("type") == "highlight_done"]
             assert len(done) == 1

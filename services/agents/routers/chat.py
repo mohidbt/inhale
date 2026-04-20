@@ -11,6 +11,7 @@ from lib.auto_highlight_tools import TOOLBELT_SYSTEM_HINT, build_tools
 from lib.conversations import upsert_conversation, insert_message, bump_updated_at
 from lib.rag import retrieve
 from lib.chat import CHAT_MODEL, run_chat
+from routers.auto_highlight import progress_detail
 
 logger = logging.getLogger(__name__)
 
@@ -206,11 +207,14 @@ async def chat(body: ChatBody, auth: InternalAuthDep, conn: ConnDep):
                     yield _sse({"type": "token", "content": token})
                 elif kind == "tool_call":
                     name = event[1]
+                    args = event[2] if len(event) > 2 else {}
                     if name in HIGHLIGHT_TOOL_LABELS:
+                        detail = progress_detail(name, args if isinstance(args, dict) else {})
                         yield _sse({
                             "type": "highlight_progress",
                             "step": name,
                             "label": HIGHLIGHT_TOOL_LABELS[name],
+                            "detail": detail,
                         })
                 elif kind == "tool_result":
                     # event: ("tool_result", name, content)

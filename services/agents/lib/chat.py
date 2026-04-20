@@ -46,9 +46,17 @@ async def run_chat(*, api_key: str, history: list[dict], question: str,
                    anchor_text: str | None, selection_text: str | None,
                    scope: str, focus_page: int | None,
                    tools: list | None = None,
-                   tool_hints: list[str] | None = None) -> AsyncIterator[tuple]:
+                   tool_hints: list[str] | None = None,
+                   system_prompt: str | None = None) -> AsyncIterator[tuple]:
     """Yield ('token', str) for LLM text, ('tool_call', name, args), ('tool_result', name, result)."""
-    model = ChatOpenAI(model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key, streaming=True)
+    # When a toolbelt is in play, mirror the slash-path: disable streaming so
+    # the agent loop runs to completion with reliable tool discipline, and
+    # pass system_prompt to create_agent so it's re-applied each iteration.
+    use_streaming = not bool(tool_hints)
+    model = ChatOpenAI(
+        model=CHAT_MODEL, base_url=OPENROUTER_BASE, api_key=api_key,
+        streaming=use_streaming,
+    )
     system = _build_system_prompt(supporting_chunks, page_text, anchor_text, selection_text, scope, focus_page)
     if tool_hints:
         # Prepend: RAG prompt + supporting chunks can be long; burying the
@@ -60,7 +68,13 @@ async def run_chat(*, api_key: str, history: list[dict], question: str,
     messages.extend(history[-10:])
     messages.append({"role": "user", "content": question})
 
-    agent = create_agent(model=model, tools=tools or [])
+    agent_kwargs: dict[str, Any] = {"model": model, "tools": tools or []}
+    if tool_hints:
+        # Re-applying the toolbelt system prompt each loop iteration matches
+        # the slash path, where gpt-4o-mini reliably calls locate_phrase before
+        # create_highlights. Inline system message alone is less reliable.
+        agent_kwargs["system_prompt"] = system_prompt or system
+    agent = create_agent(**agent_kwargs)
 
     def _dbg(*a):
         print("[IMPLICIT-DEBUG]", *a, flush=True)
